@@ -22,5 +22,10 @@ export const routes: Routes = [
     canActivate: [unlockedGuard],
     loadComponent: () => import('./pages/entry/entry.page').then((m) => m.EntryPage),
   },
+  {
+    path: 'settings',
+    canActivate: [unlockedGuard],
+    loadComponent: () => import('./pages/settings/settings.page').then((m) => m.SettingsPage),
+  },
   { path: '**', redirectTo: 'vault' },
 ];

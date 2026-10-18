@@ -1,0 +1,104 @@
+<div class="flex min-h-0 flex-1 flex-col bg-base-100">
+  <header class="safe-top shrink-0 bg-base-100">
+    <div class="mx-auto flex w-full max-w-2xl items-center gap-1 px-2 py-2">
+      <button class="btn btn-ghost btn-square" (click)="back()" aria-label="Volver">
+        <ion-icon name="arrow-back" class="text-xl"></ion-icon>
+      </button>
+      <h1 class="font-semibold">Ajustes</h1>
+    </div>
+  </header>
+
+  <main class="min-h-0 flex-1 overflow-y-auto">
+    <div class="safe-bottom mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pb-10 pt-2">
+      @if (loading()) {
+        <div class="flex justify-center py-16">
+          <span class="loading loading-spinner loading-md text-primary"></span>
+        </div>
+      } @else {
+        <!-- Seguridad -->
+        <section>
+          <h2 class="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-base-content/50">Seguridad</h2>
+          <div class="divide-y divide-base-300 rounded-box bg-base-200">
+            <label class="flex cursor-pointer items-center gap-4 px-4 py-4" [class.opacity-50]="!bioAvailable()">
+              <div class="grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
+                <ion-icon name="finger-print"></ion-icon>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium">Desbloqueo con huella</p>
+                <p class="text-xs text-base-content/60">
+                  @if (bioAvailable()) {
+                    Abre la bóveda sin escribir tu contraseña maestra.
+                  } @else {
+                    Registra una huella en los ajustes del teléfono para usarla aquí.
+                  }
+                </p>
+              </div>
+              @if (bioBusy()) {
+                <span class="loading loading-spinner loading-sm text-primary"></span>
+              } @else {
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  [checked]="bioEnabled()"
+                  [disabled]="!bioAvailable() && !bioEnabled()"
+                  (click)="$event.preventDefault(); toggleBiometric()"
+                  aria-label="Desbloqueo con huella"
+                />
+              }
+            </label>
+
+            <div class="flex items-center gap-4 px-4 py-4">
+              <div class="grid size-10 shrink-0 place-items-center rounded-full bg-base-300 text-base-content/70">
+                <ion-icon name="time-outline"></ion-icon>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium">Bloqueo automático</p>
+                <p class="text-xs text-base-content/60">La bóveda se cierra sola tras 5 minutos sin uso.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Autocompletado -->
+        <section>
+          <h2 class="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-base-content/50">Autocompletado</h2>
+          <div class="rounded-box bg-base-200 p-4">
+            <div class="flex items-center gap-4">
+              <div class="grid size-10 shrink-0 place-items-center rounded-full bg-accent/15 text-accent">
+                <ion-icon name="flash-outline"></ion-icon>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium">Rellenar en otras apps</p>
+                @if (autofillEnabled()) {
+                  <span class="badge badge-success badge-soft badge-sm mt-1">Activo</span>
+                } @else {
+                  <span class="badge badge-soft badge-sm mt-1">Inactivo</span>
+                }
+              </div>
+            </div>
+            <p class="mt-3 text-sm text-base-content/70">
+              Al tocar un campo de usuario o contraseña en otra app, savePoint te ofrece tus cuentas y escribe la contraseña
+              directo en el campo. No pasa por el portapapeles ni por el teclado.
+            </p>
+            @if (autofillSupported()) {
+              <button class="btn btn-block mt-4" [class.btn-primary]="!autofillEnabled()" (click)="openAutofill()">
+                <ion-icon name="open-outline"></ion-icon>
+                {{ autofillEnabled() ? 'Cambiar en ajustes del sistema' : 'Activar autocompletado' }}
+              </button>
+              <p class="mt-3 text-xs text-base-content/50">
+                En Chrome, además activa: Configuración, Servicios de autocompletar, "Autocompletar con otro servicio".
+              </p>
+            } @else {
+              <p class="mt-3 text-xs text-warning">Tu versión de Android no permite autocompletado de terceros.</p>
+            }
+          </div>
+        </section>
+
+        <button class="btn btn-ghost btn-block" (click)="lockNow()">
+          <ion-icon name="lock-closed-outline"></ion-icon>
+          Bloquear ahora
+        </button>
+      }
+    </div>
+  </main>
+</div>

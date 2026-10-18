@@ -18,7 +18,8 @@ export type VaultEntryInput = Omit<VaultEntry, 'id' | 'updatedAt'> & { id?: stri
 
 /**
  * Códigos de error que puede devolver el plugin (error.code):
- * INVALID, ALREADY_EXISTS, WEAK_PASSWORD, WRONG_PASSWORD, NO_VAULT, LOCKED, NOT_FOUND, INTERNAL
+ * INVALID, ALREADY_EXISTS, WEAK_PASSWORD, WRONG_PASSWORD, NO_VAULT, LOCKED, NOT_FOUND, INTERNAL,
+ * BIO_UNAVAILABLE, BIO_NOT_ENABLED, BIO_CANCELLED, BIO_INVALIDATED, BIO_FAILED, UNSUPPORTED
  */
 export interface VaultPlugin {
   status(): Promise<{ exists: boolean; unlocked: boolean }>;
@@ -31,6 +32,19 @@ export interface VaultPlugin {
   delete(options: { id: string }): Promise<void>;
   /** Copia desde el lado nativo, marcado como sensible y con borrado automático. */
   copyField(options: { id: string; field: 'username' | 'password' }): Promise<{ clearsInSeconds: number }>;
+
+  /** available: el teléfono tiene huella "fuerte" registrada. enabled: savePoint ya la usa. */
+  biometricStatus(): Promise<{ available: boolean; enabled: boolean }>;
+  /** Muestra el diálogo de huella y la vincula. Requiere la bóveda desbloqueada. */
+  enableBiometric(): Promise<void>;
+  disableBiometric(): Promise<void>;
+  /** Muestra el diálogo de huella y desbloquea. */
+  unlockWithBiometric(): Promise<void>;
+
+  /** enabled: savePoint es el servicio de autocompletado activo del teléfono. */
+  autofillStatus(): Promise<{ supported: boolean; enabled: boolean }>;
+  /** Abre el selector del sistema para elegir savePoint como autocompletado. */
+  openAutofillSettings(): Promise<void>;
 }
 
 export const Vault = registerPlugin<VaultPlugin>('Vault');

@@ -4,6 +4,7 @@ import android.os.Bundle;
 import android.view.WindowManager;
 
 import com.getcapacitor.BridgeActivity;
+import com.savepoint.vault.SecureClipboard;
 import com.savepoint.vault.VaultPlugin;
 
 public class MainActivity extends BridgeActivity {
@@ -18,5 +19,12 @@ public class MainActivity extends BridgeActivity {
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE
         );
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Respaldo: si una contraseña copiada ya venció y no se borró, se borra al volver
+        SecureClipboard.INSTANCE.clearIfExpired(this);
     }
 }

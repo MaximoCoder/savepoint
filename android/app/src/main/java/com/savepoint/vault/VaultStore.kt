@@ -143,16 +143,49 @@ object VaultStore {
         }
     }
 
+    /**
+     * Copia de la llave de la bóveda para envolverla con la llave biométrica del Keystore.
+     * Quien la reciba debe borrarla (fill(0)) en cuanto termine.
+     */
+    @Synchronized
+    fun exportKey(): ByteArray = requireKey().copyOf()
+
+    /** Desbloquea con la llave ya descifrada por la huella. Verifica que abra la bóveda antes de aceptarla. */
+    @Synchronized
+    fun unlockWithKey(ctx: Context, dek: ByteArray) {
+        try {
+            if (dek.size != KEY_LEN) throw VaultException("INVALID_KEY", "Llave inválida")
+            val entries = read(ctx).getJSONObject("entries")
+            val anyId = entries.keys().asSequence().firstOrNull()
+            if (anyId != null) {
+                try {
+                    decrypt(dek, entries.getString(anyId), entryAad(anyId)).fill(0)
+                } catch (e: GeneralSecurityException) {
+                    throw VaultException("INVALID_KEY", "La llave no corresponde a esta bóveda")
+                }
+            }
+            lock()
+            vaultKey = dek.copyOf()
+            touch()
+        } finally {
+            dek.fill(0)
+        }
+    }
+
     // ---------- Entradas ----------
 
     /** Lista sin contraseñas ni notas, para pintar la pantalla principal. */
     @Synchronized
-    fun list(ctx: Context): List<VaultEntry> {
+    fun list(ctx: Context): List<VaultEntry> =
+        listAll(ctx).map { it.copy(password = "", notes = "") }
+
+    /** Todas las entradas completas. Solo para uso nativo (Autofill); nunca se envía a JavaScript. */
+    @Synchronized
+    fun listAll(ctx: Context): List<VaultEntry> {
         val key = requireKey()
         val entries = read(ctx).getJSONObject("entries")
         return entries.keys().asSequence()
             .map { id -> decodeEntry(id, decrypt(key, entries.getString(id), entryAad(id))) }
-            .map { it.copy(password = "", notes = "") }
             .sortedBy { it.title.lowercase() }
             .toList()
     }

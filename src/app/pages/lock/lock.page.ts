@@ -2,7 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IonIcon, NavController } from '../../core/ionic';
 import { addIcons } from 'ionicons';
-import { eyeOffOutline, eyeOutline, lockClosed, warningOutline } from 'ionicons/icons';
+import { eyeOffOutline, eyeOutline, fingerPrint, lockClosed, warningOutline } from 'ionicons/icons';
 import { Vault } from '../../plugins/vault';
 import { vaultErrorCode } from '../../core/vault-session.service';
 import { passwordStrength } from '../../core/password-tools';
@@ -24,6 +24,8 @@ export class LockPage {
   readonly showPassword = signal(false);
   readonly busy = signal(false);
   readonly error = signal('');
+  /** La huella está activada y disponible en este teléfono. */
+  readonly biometric = signal(false);
 
   readonly strength = computed(() => passwordStrength(this.password()));
   readonly mismatch = computed(() => this.confirm().length > 0 && this.confirm() !== this.password());
@@ -34,7 +36,7 @@ export class LockPage {
   });
 
   constructor() {
-    addIcons({ lockClosed, eyeOutline, eyeOffOutline, warningOutline });
+    addIcons({ lockClosed, eyeOutline, eyeOffOutline, fingerPrint, warningOutline });
   }
 
   async ionViewWillEnter(): Promise<void> {
@@ -49,9 +51,42 @@ export class LockPage {
         return;
       }
       this.mode.set(exists ? 'unlock' : 'create');
+      if (exists) await this.checkBiometric();
     } catch {
       this.mode.set('unlock');
       this.error.set('No se pudo leer la bóveda.');
+    }
+  }
+
+  private async checkBiometric(): Promise<void> {
+    try {
+      const { available, enabled } = await Vault.biometricStatus();
+      this.biometric.set(available && enabled);
+      // Si está activada, se ofrece de inmediato; la contraseña queda como alternativa
+      if (available && enabled) await this.useBiometric();
+    } catch {
+      this.biometric.set(false);
+    }
+  }
+
+  async useBiometric(): Promise<void> {
+    if (this.busy()) return;
+    this.busy.set(true);
+    this.error.set('');
+    try {
+      await Vault.unlockWithBiometric();
+      await this.nav.navigateRoot('/vault');
+    } catch (e) {
+      const code = vaultErrorCode(e);
+      if (code === 'BIO_INVALIDATED') {
+        this.biometric.set(false);
+        this.error.set('Las huellas del teléfono cambiaron. Por seguridad, entra con tu contraseña y vuelve a activar la huella en Ajustes.');
+      } else if (code === 'BIO_FAILED') {
+        this.error.set('No se pudo usar la huella. Entra con tu contraseña maestra.');
+      }
+      // BIO_CANCELLED: el usuario eligió la contraseña o cerró el diálogo; no hace falta mensaje
+    } finally {
+      this.busy.set(false);
     }
   }
 

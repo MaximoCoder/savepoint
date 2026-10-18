@@ -13,12 +13,12 @@
           }
         </button>
       } @else {
-        <button class="btn btn-ghost btn-circle" (click)="back()" aria-label="Volver">
+        <button class="btn btn-ghost btn-square" (click)="back()" aria-label="Volver">
           <ion-icon name="arrow-back" class="text-xl"></ion-icon>
         </button>
         <h1 class="min-w-0 flex-1 truncate font-semibold">{{ headerTitle() }}</h1>
         @if (mode() === 'view') {
-          <button class="btn btn-ghost btn-circle" (click)="edit()" aria-label="Editar">
+          <button class="btn btn-ghost btn-square" (click)="edit()" aria-label="Editar">
             <ion-icon name="create-outline" class="text-xl"></ion-icon>
           </button>
         }
@@ -58,7 +58,7 @@
                   <p class="truncate">{{ e.username || '—' }}</p>
                 </div>
                 @if (e.username) {
-                  <button class="btn btn-ghost btn-circle" (click)="copy('username')" aria-label="Copiar usuario">
+                  <button class="btn btn-ghost btn-square" (click)="copy('username')" aria-label="Copiar usuario">
                     <ion-icon name="copy-outline"></ion-icon>
                   </button>
                 }
@@ -76,13 +76,13 @@
                 </div>
                 @if (e.password) {
                   <button
-                    class="btn btn-ghost btn-circle"
+                    class="btn btn-ghost btn-square"
                     (click)="showPassword.set(!showPassword())"
                     [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"
                   >
                     <ion-icon [name]="showPassword() ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
                   </button>
-                  <button class="btn btn-ghost btn-circle" (click)="copy('password')" aria-label="Copiar contraseña">
+                  <button class="btn btn-ghost btn-square" (click)="copy('password')" aria-label="Copiar contraseña">
                     <ion-icon name="copy-outline"></ion-icon>
                   </button>
                 }
@@ -159,7 +159,7 @@
                 />
                 <button
                   type="button"
-                  class="btn btn-ghost btn-circle btn-sm"
+                  class="btn btn-ghost btn-square btn-sm"
                   (click)="showPassword.set(!showPassword())"
                   [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"
                 >
@@ -188,7 +188,7 @@
                 </button>
                 <button
                   type="button"
-                  class="btn btn-ghost btn-circle"
+                  class="btn btn-ghost btn-square"
                   [class.btn-active]="showGenerator()"
                   (click)="showGenerator.set(!showGenerator())"
                   aria-label="Opciones del generador"

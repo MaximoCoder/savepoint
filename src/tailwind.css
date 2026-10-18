@@ -32,7 +32,7 @@
   --color-error: oklch(65% 0.241 354.308);
   --color-error-content: oklch(97% 0.014 343.198);
   --radius-selector: 0.5rem;
-  --radius-field: 2rem;
+  --radius-field: 0.5rem;
   --radius-box: 0.5rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
@@ -66,6 +66,11 @@ body {
 .font-secret {
   font-family: ui-monospace, "JetBrains Mono", "Roboto Mono", monospace;
   letter-spacing: 0.02em;
+}
+
+.font-secret::placeholder {
+  font-family: var(--font-sans);
+  letter-spacing: normal;
 }
 
 /* Iconos de Ionic al tamaño del texto que los rodea */

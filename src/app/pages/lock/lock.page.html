@@ -38,7 +38,7 @@
             />
             <button
               type="button"
-              class="btn btn-ghost btn-circle btn-sm"
+              class="btn btn-ghost btn-square btn-sm"
               (click)="showPassword.set(!showPassword())"
               [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"
             >
@@ -105,6 +105,14 @@
             {{ mode() === 'create' ? 'Crear bóveda' : 'Desbloquear' }}
           }
         </button>
+
+        @if (mode() === 'unlock' && biometric()) {
+          <div class="divider my-1 text-xs text-base-content/40">o</div>
+          <button type="button" class="btn btn-soft btn-primary btn-lg btn-block" [disabled]="busy()" (click)="useBiometric()">
+            <ion-icon name="finger-print"></ion-icon>
+            Usar huella
+          </button>
+        }
       </form>
     }
   </div>

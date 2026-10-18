@@ -10,9 +10,14 @@
           </p>
         }
       </div>
-      <button class="btn btn-ghost btn-circle" (click)="lock()" aria-label="Bloquear bóveda">
-        <ion-icon name="lock-closed-outline" class="text-xl"></ion-icon>
-      </button>
+      <div class="flex items-center">
+        <button class="btn btn-ghost btn-square" (click)="openSettings()" aria-label="Ajustes">
+          <ion-icon name="settings-outline" class="text-xl"></ion-icon>
+        </button>
+        <button class="btn btn-ghost btn-square" (click)="lock()" aria-label="Bloquear bóveda">
+          <ion-icon name="lock-closed-outline" class="text-xl"></ion-icon>
+        </button>
+      </div>
     </div>
 
     @if (entries().length > 0) {
@@ -28,7 +33,7 @@
             [(ngModel)]="query"
           />
           @if (query()) {
-            <button type="button" class="btn btn-ghost btn-circle btn-xs" (click)="query.set('')" aria-label="Limpiar búsqueda">
+            <button type="button" class="btn btn-ghost btn-square btn-xs" (click)="query.set('')" aria-label="Limpiar búsqueda">
               <ion-icon name="close-circle" class="text-base-content/50"></ion-icon>
             </button>
           }
@@ -40,6 +45,20 @@
   <!-- Contenido -->
   <main class="min-h-0 flex-1 overflow-y-auto">
     <div class="mx-auto w-full max-w-2xl px-4 pb-32">
+      @if (suggestBiometric() && !loading()) {
+        <div class="mb-4 flex items-start gap-3 rounded-box border border-primary/20 bg-primary/10 p-4">
+          <ion-icon name="finger-print" class="mt-0.5 text-xl text-primary"></ion-icon>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium">Abre savePoint con tu huella</p>
+            <p class="mt-0.5 text-xs text-base-content/60">Más rápido que escribir la contraseña maestra cada vez.</p>
+            <button class="btn btn-primary btn-sm mt-3" (click)="openSettings()">Activar</button>
+          </div>
+          <button class="btn btn-ghost btn-square btn-xs" (click)="dismissBiometricTip()" aria-label="Descartar">
+            <ion-icon name="close"></ion-icon>
+          </button>
+        </div>
+      }
+
       @if (loading()) {
         <div class="flex justify-center py-16">
           <span class="loading loading-spinner loading-md text-primary"></span>
@@ -91,7 +110,7 @@
   @if (!loading() && entries().length > 0) {
     <div class="safe-bottom pointer-events-none fixed inset-x-0 bottom-0 z-10">
       <div class="mx-auto flex w-full max-w-2xl justify-end px-5 pb-5">
-        <button class="btn btn-primary btn-circle btn-xl pointer-events-auto shadow-lg" (click)="add()" aria-label="Agregar contraseña">
+        <button class="btn btn-primary btn-square btn-xl pointer-events-auto shadow-lg" (click)="add()" aria-label="Agregar contraseña">
           <ion-icon name="add" class="text-2xl"></ion-icon>
         </button>
       </div>

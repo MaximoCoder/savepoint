@@ -1,5 +1,10 @@
 package com.savepoint.vault
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import android.view.autofill.AutofillManager
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -113,6 +118,82 @@ class VaultPlugin : Plugin() {
     fun delete(call: PluginCall) = guard(call) {
         val id = call.getString("id") ?: return@guard call.reject("Falta el id", "INVALID")
         VaultStore.delete(context, id)
+        call.resolve()
+    }
+
+    // ---------- Huella ----------
+
+    @PluginMethod
+    fun biometricStatus(call: PluginCall) = guard(call) {
+        call.resolve(JSObject().apply {
+            put("available", BiometricVault.isAvailable(context))
+            put("enabled", BiometricVault.isEnabled(context))
+        })
+    }
+
+    @PluginMethod
+    fun enableBiometric(call: PluginCall) = guard(call) {
+        if (!VaultStore.isUnlocked()) return@guard call.reject("La bóveda está bloqueada", "LOCKED")
+        if (!BiometricVault.isAvailable(context)) {
+            return@guard call.reject("No hay huellas registradas en el teléfono", "BIO_UNAVAILABLE")
+        }
+        activity.runOnUiThread {
+            BiometricVault.enable(activity) { result -> resolveBio(call, result) }
+        }
+    }
+
+    @PluginMethod
+    fun disableBiometric(call: PluginCall) = guard(call) {
+        BiometricVault.disable(context)
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun unlockWithBiometric(call: PluginCall) = guard(call) {
+        if (!BiometricVault.isEnabled(context)) {
+            return@guard call.reject("El desbloqueo con huella no está activado", "BIO_NOT_ENABLED")
+        }
+        activity.runOnUiThread {
+            BiometricVault.unlock(activity, negative = "Usar contraseña") { result -> resolveBio(call, result) }
+        }
+    }
+
+    private fun resolveBio(call: PluginCall, result: BioResult) {
+        when (result) {
+            BioResult.Success -> call.resolve()
+            is BioResult.Cancelled -> call.reject("Cancelado", "BIO_CANCELLED")
+            BioResult.Invalidated -> call.reject("Las huellas del teléfono cambiaron", "BIO_INVALIDATED")
+            is BioResult.Failed -> call.reject(result.message, "BIO_FAILED")
+        }
+    }
+
+    // ---------- Autocompletado ----------
+
+    @PluginMethod
+    fun autofillStatus(call: PluginCall) = guard(call) {
+        val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+        val enabled = supported &&
+            context.getSystemService(AutofillManager::class.java)?.hasEnabledAutofillServices() == true
+        call.resolve(JSObject().apply {
+            put("supported", supported)
+            put("enabled", enabled)
+        })
+    }
+
+    /** Abre el selector del sistema para elegir savePoint como servicio de autocompletado. */
+    @PluginMethod
+    fun openAutofillSettings(call: PluginCall) = guard(call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return@guard call.reject("Requiere Android 8 o superior", "UNSUPPORTED")
+        }
+        val picker = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+            .setData(Uri.parse("package:${context.packageName}"))
+        try {
+            activity.startActivity(picker)
+        } catch (e: Exception) {
+            // Algunas capas de fabricante no exponen el selector directo
+            activity.startActivity(Intent(Settings.ACTION_SETTINGS))
+        }
         call.resolve()
     }
 

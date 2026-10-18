@@ -24,6 +24,30 @@
 
         </activity>
 
+        <!-- Servicio de autocompletado del sistema -->
+        <service
+            android:name=".autofill.SavePointAutofillService"
+            android:label="savePoint"
+            android:exported="true"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+        </service>
+
+        <!-- Desbloqueo desde el menú de autocompletado -->
+        <activity
+            android:name=".autofill.AutofillAuthActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/SavePoint.AutofillAuth" />
+
+        <!-- Borrado del portapapeles aunque la app esté en segundo plano -->
+        <service
+            android:name=".vault.ClipboardClearJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
