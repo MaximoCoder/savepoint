@@ -1,0 +1,113 @@
+package com.savepoint.vault
+
+import com.getcapacitor.JSArray
+import com.getcapacitor.JSObject
+import com.getcapacitor.Plugin
+import com.getcapacitor.PluginCall
+import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.CapacitorPlugin
+
+/**
+ * Puente entre Angular y VaultStore. No contiene lógica criptográfica.
+ * Capacitor ejecuta estos métodos fuera del hilo de UI, así que Argon2 no congela la pantalla.
+ */
+@CapacitorPlugin(name = "Vault")
+class VaultPlugin : Plugin() {
+
+    @PluginMethod
+    fun status(call: PluginCall) = guard(call) {
+        call.resolve(JSObject().apply {
+            put("exists", VaultStore.exists(context))
+            put("unlocked", VaultStore.isUnlocked())
+        })
+    }
+
+    @PluginMethod
+    fun create(call: PluginCall) = guard(call) {
+        val pw = call.getString("masterPassword")
+            ?: return@guard call.reject("Falta la contraseña maestra", "INVALID")
+        VaultStore.create(context, pw.toCharArray())
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun unlock(call: PluginCall) = guard(call) {
+        val pw = call.getString("masterPassword")
+            ?: return@guard call.reject("Falta la contraseña maestra", "INVALID")
+        VaultStore.unlock(context, pw.toCharArray())
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun lock(call: PluginCall) = guard(call) {
+        VaultStore.lock()
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun list(call: PluginCall) = guard(call) {
+        val arr = JSArray()
+        VaultStore.list(context).forEach { e ->
+            arr.put(JSObject().apply {
+                put("id", e.id)
+                put("title", e.title)
+                put("username", e.username)
+                put("url", e.url)
+                put("updatedAt", e.updatedAt)
+            })
+        }
+        call.resolve(JSObject().put("entries", arr))
+    }
+
+    @PluginMethod
+    fun get(call: PluginCall) = guard(call) {
+        val id = call.getString("id") ?: return@guard call.reject("Falta el id", "INVALID")
+        val e = VaultStore.get(context, id)
+        call.resolve(JSObject().put("entry", JSObject().apply {
+            put("id", e.id)
+            put("title", e.title)
+            put("username", e.username)
+            put("password", e.password)
+            put("url", e.url)
+            put("notes", e.notes)
+            put("updatedAt", e.updatedAt)
+        }))
+    }
+
+    @PluginMethod
+    fun save(call: PluginCall) = guard(call) {
+        val o = call.getObject("entry") ?: return@guard call.reject("Falta la entrada", "INVALID")
+        val title = o.optString("title").trim()
+        if (title.isEmpty()) return@guard call.reject("El título es obligatorio", "INVALID")
+        val id = VaultStore.save(
+            context,
+            VaultEntry(
+                id = o.optString("id"),
+                title = title,
+                username = o.optString("username"),
+                password = o.optString("password"),
+                url = o.optString("url"),
+                notes = o.optString("notes"),
+                updatedAt = 0L
+            )
+        )
+        call.resolve(JSObject().put("id", id))
+    }
+
+    @PluginMethod
+    fun delete(call: PluginCall) = guard(call) {
+        val id = call.getString("id") ?: return@guard call.reject("Falta el id", "INVALID")
+        VaultStore.delete(context, id)
+        call.resolve()
+    }
+
+    private inline fun guard(call: PluginCall, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: VaultException) {
+            call.reject(e.message, e.code)
+        } catch (e: Exception) {
+            call.reject("Error interno de la bóveda", "INTERNAL", e)
+        }
+    }
+}
