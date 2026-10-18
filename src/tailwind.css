@@ -1,0 +1,75 @@
+/* Tailwind solo escanea src/, así no recorre android/ ni node_modules */
+@import "tailwindcss" source(".");
+
+/* Sin temas incluidos: la app solo usa el tema savepoint (oscuro) */
+@plugin "daisyui" {
+  themes: false;
+}
+
+@plugin "daisyui/theme" {
+  name: "savepoint";
+  default: true;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(13% 0.028 261.692);
+  --color-base-200: oklch(21% 0.034 264.665);
+  --color-base-300: oklch(27% 0.033 256.848);
+  --color-base-content: oklch(96% 0.003 264.542);
+  --color-primary: oklch(82% 0.119 306.383);
+  --color-primary-content: oklch(29% 0.149 302.717);
+  --color-secondary: oklch(0% 0 0);
+  --color-secondary-content: oklch(100% 0 0);
+  --color-accent: oklch(85% 0.138 181.071);
+  --color-accent-content: oklch(27% 0.046 192.524);
+  --color-neutral: oklch(27% 0.033 256.848);
+  --color-neutral-content: oklch(98% 0.002 247.839);
+  --color-info: oklch(71% 0.143 215.221);
+  --color-info-content: oklch(98% 0.019 200.873);
+  --color-success: oklch(72% 0.219 149.579);
+  --color-success-content: oklch(98% 0.018 155.826);
+  --color-warning: oklch(76% 0.188 70.08);
+  --color-warning-content: oklch(98% 0.022 95.277);
+  --color-error: oklch(65% 0.241 354.308);
+  --color-error-content: oklch(97% 0.014 343.198);
+  --radius-selector: 0.5rem;
+  --radius-field: 2rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 1;
+}
+
+/* Ionic usa sus propias variables de fondo y texto: las alineamos con el tema */
+:root {
+  --ion-background-color: var(--color-base-100);
+  --ion-text-color: var(--color-base-content);
+}
+
+html,
+body {
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+}
+
+/* Áreas seguras (barra de estado y barra de gestos) */
+.safe-top {
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+}
+
+.safe-bottom {
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+/* Contraseñas en monoespaciada para distinguir 0/O, l/1 */
+.font-secret {
+  font-family: ui-monospace, "JetBrains Mono", "Roboto Mono", monospace;
+  letter-spacing: 0.02em;
+}
+
+/* Iconos de Ionic al tamaño del texto que los rodea */
+ion-icon {
+  font-size: 1.25em;
+  flex-shrink: 0;
+}

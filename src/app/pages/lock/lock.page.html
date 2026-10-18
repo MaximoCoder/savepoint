@@ -1,0 +1,111 @@
+<div class="safe-top safe-bottom flex min-h-0 flex-1 flex-col overflow-y-auto bg-base-100">
+  <div class="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-10">
+    <!-- Marca -->
+    <div class="mb-8 flex flex-col items-center text-center">
+      <div class="mb-4 grid size-16 place-items-center rounded-2xl bg-primary/15 text-primary">
+        <ion-icon name="lock-closed" class="text-3xl"></ion-icon>
+      </div>
+      <h1 class="text-2xl font-semibold tracking-tight">savePoint</h1>
+      @switch (mode()) {
+        @case ('create') {
+          <p class="mt-2 text-sm text-base-content/60">Crea tu contraseña maestra. Es la única que vas a tener que recordar.</p>
+        }
+        @case ('unlock') {
+          <p class="mt-2 text-sm text-base-content/60">Escribe tu contraseña maestra para abrir la bóveda.</p>
+        }
+      }
+    </div>
+
+    @if (mode() === 'loading') {
+      <div class="flex justify-center py-8">
+        <span class="loading loading-spinner loading-md text-primary"></span>
+      </div>
+    } @else {
+      <form class="flex flex-col gap-4" (ngSubmit)="submit()">
+        <!-- Contraseña maestra -->
+        <div>
+          <label class="input input-lg w-full" [class.input-error]="!!error()">
+            <input
+              [type]="showPassword() ? 'text' : 'password'"
+              name="password"
+              class="grow font-secret"
+              placeholder="Contraseña maestra"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              [(ngModel)]="password"
+              [disabled]="busy()"
+            />
+            <button
+              type="button"
+              class="btn btn-ghost btn-circle btn-sm"
+              (click)="showPassword.set(!showPassword())"
+              [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+            >
+              <ion-icon [name]="showPassword() ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
+            </button>
+          </label>
+
+          @if (mode() === 'create' && password()) {
+            <div class="mt-2 px-2">
+              <progress
+                class="progress h-1.5 w-full"
+                [class.progress-error]="strength().score <= 1"
+                [class.progress-warning]="strength().score === 2"
+                [class.progress-success]="strength().score >= 3"
+                [value]="strength().score + 1"
+                max="5"
+              ></progress>
+              <div class="mt-1 flex justify-between text-xs text-base-content/60">
+                <span>{{ strength().label }}</span>
+                <span [class.text-success]="password().length >= minLength">
+                  {{ password().length }} / {{ minLength }} mín.
+                </span>
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- Confirmación -->
+        @if (mode() === 'create') {
+          <div>
+            <label class="input input-lg w-full" [class.input-error]="mismatch()">
+              <input
+                [type]="showPassword() ? 'text' : 'password'"
+                name="confirm"
+                class="grow font-secret"
+                placeholder="Repite la contraseña"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                [(ngModel)]="confirm"
+                [disabled]="busy()"
+              />
+            </label>
+            @if (mismatch()) {
+              <p class="mt-1 px-2 text-xs text-error">Las contraseñas no coinciden.</p>
+            }
+          </div>
+
+          <div role="alert" class="alert alert-warning alert-soft items-start text-sm">
+            <ion-icon name="warning-outline" class="mt-0.5"></ion-icon>
+            <span>Si la olvidas no hay forma de recuperarla. Nadie, ni siquiera tú, podrá abrir la bóveda.</span>
+          </div>
+        }
+
+        @if (error()) {
+          <p class="px-2 text-sm text-error">{{ error() }}</p>
+        }
+
+        <button type="submit" class="btn btn-primary btn-lg btn-block mt-2" [disabled]="!canSubmit()">
+          @if (busy()) {
+            <span class="loading loading-spinner loading-sm"></span>
+            {{ mode() === 'create' ? 'Creando bóveda…' : 'Abriendo…' }}
+          } @else {
+            {{ mode() === 'create' ? 'Crear bóveda' : 'Desbloquear' }}
+          }
+        </button>
+      </form>
+    }
+  </div>
+</div>

@@ -1,0 +1,100 @@
+<div class="flex min-h-0 flex-1 flex-col bg-base-100">
+  <!-- Encabezado -->
+  <header class="safe-top shrink-0 bg-base-100/95 backdrop-blur">
+    <div class="mx-auto flex w-full max-w-2xl items-center justify-between px-4 pt-3 pb-2">
+      <div>
+        <h1 class="text-xl font-semibold tracking-tight">savePoint</h1>
+        @if (!loading()) {
+          <p class="text-xs text-base-content/50">
+            {{ entries().length }} {{ entries().length === 1 ? 'contraseña' : 'contraseñas' }}
+          </p>
+        }
+      </div>
+      <button class="btn btn-ghost btn-circle" (click)="lock()" aria-label="Bloquear bóveda">
+        <ion-icon name="lock-closed-outline" class="text-xl"></ion-icon>
+      </button>
+    </div>
+
+    @if (entries().length > 0) {
+      <div class="mx-auto w-full max-w-2xl px-4 pb-3">
+        <label class="input w-full">
+          <ion-icon name="search-outline" class="text-base-content/50"></ion-icon>
+          <input
+            type="search"
+            name="query"
+            class="grow"
+            placeholder="Buscar"
+            autocomplete="off"
+            [(ngModel)]="query"
+          />
+          @if (query()) {
+            <button type="button" class="btn btn-ghost btn-circle btn-xs" (click)="query.set('')" aria-label="Limpiar búsqueda">
+              <ion-icon name="close-circle" class="text-base-content/50"></ion-icon>
+            </button>
+          }
+        </label>
+      </div>
+    }
+  </header>
+
+  <!-- Contenido -->
+  <main class="min-h-0 flex-1 overflow-y-auto">
+    <div class="mx-auto w-full max-w-2xl px-4 pb-32">
+      @if (loading()) {
+        <div class="flex justify-center py-16">
+          <span class="loading loading-spinner loading-md text-primary"></span>
+        </div>
+      } @else if (entries().length === 0) {
+        <!-- Bóveda vacía -->
+        <div class="flex flex-col items-center px-6 py-20 text-center">
+          <div class="mb-4 grid size-14 place-items-center rounded-2xl bg-base-200 text-primary">
+            <ion-icon name="key-outline" class="text-2xl"></ion-icon>
+          </div>
+          <h2 class="font-medium">Aún no tienes contraseñas</h2>
+          <p class="mt-1 text-sm text-base-content/60">Guarda la primera y la tendrás cifrada en este teléfono.</p>
+          <button class="btn btn-primary mt-6" (click)="add()">
+            <ion-icon name="add"></ion-icon>
+            Agregar contraseña
+          </button>
+        </div>
+      } @else if (filtered().length === 0) {
+        <!-- Búsqueda sin resultados -->
+        <div class="py-16 text-center">
+          <p class="font-medium">Sin resultados</p>
+          <p class="mt-1 text-sm text-base-content/60">Nada coincide con "{{ query() }}".</p>
+        </div>
+      } @else {
+        <ul class="list rounded-box bg-base-200">
+          @for (e of filtered(); track e.id) {
+            <li
+              class="list-row cursor-pointer items-center active:bg-base-300"
+              (click)="open(e.id)"
+              (keydown.enter)="open(e.id)"
+              tabindex="0"
+            >
+              <div class="grid size-10 place-items-center rounded-full bg-primary/15 font-semibold text-primary">
+                {{ initial(e.title) }}
+              </div>
+              <div class="min-w-0">
+                <div class="truncate font-medium">{{ e.title }}</div>
+                <div class="truncate text-xs text-base-content/60">{{ subtitle(e) }}</div>
+              </div>
+              <ion-icon name="chevron-forward" class="text-base-content/40"></ion-icon>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  </main>
+
+  <!-- Botón flotante para agregar -->
+  @if (!loading() && entries().length > 0) {
+    <div class="safe-bottom pointer-events-none fixed inset-x-0 bottom-0 z-10">
+      <div class="mx-auto flex w-full max-w-2xl justify-end px-5 pb-5">
+        <button class="btn btn-primary btn-circle btn-xl pointer-events-auto shadow-lg" (click)="add()" aria-label="Agregar contraseña">
+          <ion-icon name="add" class="text-2xl"></ion-icon>
+        </button>
+      </div>
+    </div>
+  }
+</div>

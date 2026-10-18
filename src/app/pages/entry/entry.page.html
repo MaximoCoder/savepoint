@@ -1,0 +1,282 @@
+<div class="flex min-h-0 flex-1 flex-col bg-base-100">
+  <!-- Encabezado -->
+  <header class="safe-top shrink-0 bg-base-100">
+    <div class="mx-auto flex w-full max-w-2xl items-center gap-1 px-2 py-2">
+      @if (mode() === 'edit') {
+        <button class="btn btn-ghost" (click)="cancel()">Cancelar</button>
+        <h1 class="min-w-0 flex-1 truncate text-center font-semibold">{{ headerTitle() }}</h1>
+        <button class="btn btn-ghost text-primary" [disabled]="!canSave()" (click)="save()">
+          @if (saving()) {
+            <span class="loading loading-spinner loading-sm"></span>
+          } @else {
+            Guardar
+          }
+        </button>
+      } @else {
+        <button class="btn btn-ghost btn-circle" (click)="back()" aria-label="Volver">
+          <ion-icon name="arrow-back" class="text-xl"></ion-icon>
+        </button>
+        <h1 class="min-w-0 flex-1 truncate font-semibold">{{ headerTitle() }}</h1>
+        @if (mode() === 'view') {
+          <button class="btn btn-ghost btn-circle" (click)="edit()" aria-label="Editar">
+            <ion-icon name="create-outline" class="text-xl"></ion-icon>
+          </button>
+        }
+      }
+    </div>
+  </header>
+
+  <main class="min-h-0 flex-1 overflow-y-auto">
+    <div class="safe-bottom mx-auto w-full max-w-2xl px-4 pb-10">
+      @switch (mode()) {
+        @case ('loading') {
+          <div class="flex justify-center py-16">
+            <span class="loading loading-spinner loading-md text-primary"></span>
+          </div>
+        }
+
+        <!-- ===================== VER ===================== -->
+        @case ('view') {
+          @if (entry(); as e) {
+            <div class="flex items-center gap-4 py-4">
+              <div class="grid size-14 place-items-center rounded-full bg-primary/15 text-xl font-semibold text-primary">
+                {{ initial(e.title) }}
+              </div>
+              <div class="min-w-0">
+                <p class="truncate text-lg font-semibold">{{ e.title }}</p>
+                @if (e.url) {
+                  <p class="truncate text-sm text-base-content/60">{{ host(e.url) }}</p>
+                }
+              </div>
+            </div>
+
+            <div class="divide-y divide-base-300 rounded-box bg-base-200">
+              <!-- Usuario -->
+              <div class="flex items-center gap-2 px-4 py-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs text-base-content/50">Usuario</p>
+                  <p class="truncate">{{ e.username || '—' }}</p>
+                </div>
+                @if (e.username) {
+                  <button class="btn btn-ghost btn-circle" (click)="copy('username')" aria-label="Copiar usuario">
+                    <ion-icon name="copy-outline"></ion-icon>
+                  </button>
+                }
+              </div>
+
+              <!-- Contraseña -->
+              <div class="flex items-center gap-2 px-4 py-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs text-base-content/50">Contraseña</p>
+                  @if (e.password) {
+                    <p class="font-secret break-all">{{ showPassword() ? e.password : '••••••••••••' }}</p>
+                  } @else {
+                    <p>—</p>
+                  }
+                </div>
+                @if (e.password) {
+                  <button
+                    class="btn btn-ghost btn-circle"
+                    (click)="showPassword.set(!showPassword())"
+                    [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+                  >
+                    <ion-icon [name]="showPassword() ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
+                  </button>
+                  <button class="btn btn-ghost btn-circle" (click)="copy('password')" aria-label="Copiar contraseña">
+                    <ion-icon name="copy-outline"></ion-icon>
+                  </button>
+                }
+              </div>
+
+              <!-- Sitio -->
+              @if (e.url) {
+                <div class="flex items-center gap-2 px-4 py-3">
+                  <div class="min-w-0 flex-1">
+                    <p class="text-xs text-base-content/50">Sitio o app</p>
+                    <p class="truncate">{{ e.url }}</p>
+                  </div>
+                  <ion-icon name="globe-outline" class="mx-3 text-base-content/40"></ion-icon>
+                </div>
+              }
+
+              <!-- Notas -->
+              @if (e.notes) {
+                <div class="px-4 py-3">
+                  <p class="text-xs text-base-content/50">Notas</p>
+                  <p class="whitespace-pre-wrap break-words">{{ e.notes }}</p>
+                </div>
+              }
+            </div>
+
+            <p class="mt-3 px-1 text-xs text-base-content/40">Última modificación: {{ formatDate(e.updatedAt) }}</p>
+
+            <button class="btn btn-error btn-soft btn-block mt-10" (click)="askDelete()">
+              <ion-icon name="trash-outline"></ion-icon>
+              Eliminar contraseña
+            </button>
+          }
+        }
+
+        <!-- ===================== EDITAR / NUEVA ===================== -->
+        @case ('edit') {
+          <form class="flex flex-col gap-5 pt-2" (ngSubmit)="save()">
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Nombre <span class="text-error">*</span></legend>
+              <input
+                class="input w-full"
+                name="title"
+                placeholder="Ej. Banco, Gmail, Netflix"
+                autocomplete="off"
+                [(ngModel)]="title"
+              />
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Usuario o correo</legend>
+              <input
+                class="input w-full"
+                name="username"
+                placeholder="tucorreo@ejemplo.com"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                [(ngModel)]="username"
+              />
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Contraseña</legend>
+              <label class="input w-full">
+                <input
+                  [type]="showPassword() ? 'text' : 'password'"
+                  name="password"
+                  class="grow font-secret"
+                  placeholder="Escribe o genera una"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  [(ngModel)]="password"
+                />
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-circle btn-sm"
+                  (click)="showPassword.set(!showPassword())"
+                  [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+                >
+                  <ion-icon [name]="showPassword() ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
+                </button>
+              </label>
+
+              @if (password()) {
+                <div class="mt-1 flex items-center gap-2 px-2">
+                  <progress
+                    class="progress h-1.5 flex-1"
+                    [class.progress-error]="strength().score <= 1"
+                    [class.progress-warning]="strength().score === 2"
+                    [class.progress-success]="strength().score >= 3"
+                    [value]="strength().score + 1"
+                    max="5"
+                  ></progress>
+                  <span class="w-20 text-right text-xs text-base-content/60">{{ strength().label }}</span>
+                </div>
+              }
+
+              <div class="mt-2 flex gap-2">
+                <button type="button" class="btn btn-soft btn-primary flex-1" (click)="generate()">
+                  <ion-icon name="sparkles-outline"></ion-icon>
+                  {{ password() ? 'Generar otra' : 'Generar segura' }}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-circle"
+                  [class.btn-active]="showGenerator()"
+                  (click)="showGenerator.set(!showGenerator())"
+                  aria-label="Opciones del generador"
+                >
+                  <ion-icon name="options-outline"></ion-icon>
+                </button>
+              </div>
+
+              @if (showGenerator()) {
+                <div class="mt-2 rounded-box bg-base-200 p-4">
+                  <div class="flex items-center justify-between text-sm">
+                    <span>Longitud</span>
+                    <span class="font-secret font-semibold text-primary">{{ genLength() }}</span>
+                  </div>
+                  <input
+                    type="range"
+                    name="genLength"
+                    min="12"
+                    max="64"
+                    class="range range-primary range-sm mt-2 w-full"
+                    [(ngModel)]="genLength"
+                    (ngModelChange)="generate()"
+                  />
+                  <div class="mt-4 flex flex-col gap-3 text-sm">
+                    <label class="flex items-center justify-between">
+                      <span>Números</span>
+                      <input type="checkbox" name="genDigits" class="toggle toggle-primary toggle-sm" [(ngModel)]="genDigits" (ngModelChange)="generate()" />
+                    </label>
+                    <label class="flex items-center justify-between">
+                      <span>Símbolos</span>
+                      <input type="checkbox" name="genSymbols" class="toggle toggle-primary toggle-sm" [(ngModel)]="genSymbols" (ngModelChange)="generate()" />
+                    </label>
+                  </div>
+                </div>
+              }
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Sitio o app</legend>
+              <input
+                class="input w-full"
+                name="url"
+                placeholder="ejemplo.com"
+                inputmode="url"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                [(ngModel)]="url"
+              />
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Notas</legend>
+              <textarea
+                class="textarea w-full rounded-box"
+                name="notes"
+                rows="3"
+                placeholder="Preguntas de seguridad, PIN, lo que necesites"
+                [(ngModel)]="notes"
+              ></textarea>
+            </fieldset>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg mt-2" [disabled]="!canSave()">
+              @if (saving()) {
+                <span class="loading loading-spinner loading-sm"></span>
+              }
+              Guardar
+            </button>
+          </form>
+        }
+      }
+    </div>
+  </main>
+
+  <!-- Confirmación de borrado -->
+  <dialog #deleteDialog class="modal modal-bottom sm:modal-middle">
+    <div class="modal-box">
+      <h3 class="text-lg font-semibold">¿Eliminar esta contraseña?</h3>
+      <p class="py-3 text-sm text-base-content/70">
+        Se borrará "{{ entry()?.title }}" de la bóveda. Esta acción no se puede deshacer.
+      </p>
+      <div class="modal-action">
+        <button class="btn btn-ghost" (click)="closeDelete()">Cancelar</button>
+        <button class="btn btn-error" (click)="confirmDelete()">Eliminar</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>cerrar</button>
+    </form>
+  </dialog>
+</div>

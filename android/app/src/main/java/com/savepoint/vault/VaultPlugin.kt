@@ -94,6 +94,21 @@ class VaultPlugin : Plugin() {
         call.resolve(JSObject().put("id", id))
     }
 
+    /** Copia usuario o contraseña directo desde la bóveda, sin pasar el valor por JavaScript. */
+    @PluginMethod
+    fun copyField(call: PluginCall) = guard(call) {
+        val id = call.getString("id") ?: return@guard call.reject("Falta el id", "INVALID")
+        val field = call.getString("field") ?: return@guard call.reject("Falta el campo", "INVALID")
+        val e = VaultStore.get(context, id)
+        val value = when (field) {
+            "username" -> e.username
+            "password" -> e.password
+            else -> return@guard call.reject("Campo no válido", "INVALID")
+        }
+        SecureClipboard.copy(context, value, sensitive = field == "password")
+        call.resolve(JSObject().put("clearsInSeconds", SecureClipboard.CLEAR_AFTER_SECONDS))
+    }
+
     @PluginMethod
     fun delete(call: PluginCall) = guard(call) {
         val id = call.getString("id") ?: return@guard call.reject("Falta el id", "INVALID")

@@ -29,6 +29,8 @@ export interface VaultPlugin {
   get(options: { id: string }): Promise<{ entry: VaultEntry }>;
   save(options: { entry: VaultEntryInput }): Promise<{ id: string }>;
   delete(options: { id: string }): Promise<void>;
+  /** Copia desde el lado nativo, marcado como sensible y con borrado automático. */
+  copyField(options: { id: string; field: 'username' | 'password' }): Promise<{ clearsInSeconds: number }>;
 }
 
 export const Vault = registerPlugin<VaultPlugin>('Vault');
