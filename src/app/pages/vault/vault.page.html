@@ -59,6 +59,20 @@
         </div>
       }
 
+      @if (suggestBackup() && !suggestBiometric() && !loading()) {
+        <div class="mb-4 flex items-start gap-3 rounded-box border border-warning/25 bg-warning/10 p-4">
+          <ion-icon name="shield-checkmark-outline" class="mt-0.5 text-xl text-warning"></ion-icon>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium">{{ backupNever() ? 'Aún no tienes respaldo' : 'Tu respaldo tiene más de un mes' }}</p>
+            <p class="mt-0.5 text-xs text-base-content/60">Si pierdes el teléfono, el respaldo es la única forma de recuperar tus contraseñas.</p>
+            <button class="btn btn-warning btn-sm mt-3" (click)="goBackup()">Hacer respaldo</button>
+          </div>
+          <button class="btn btn-ghost btn-square btn-xs" (click)="snoozeBackupTip()" aria-label="Recordar después">
+            <ion-icon name="close"></ion-icon>
+          </button>
+        </div>
+      }
+
       @if (loading()) {
         <div class="flex justify-center py-16">
           <span class="loading loading-spinner loading-md text-primary"></span>

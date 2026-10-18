@@ -26,6 +26,10 @@ data class VaultEntry(
 
 class VaultException(val code: String, message: String) : Exception(message)
 
+data class BackupInfo(val exportedAt: Long, val entryCount: Int)
+
+data class MergeResult(val added: Int, val updated: Int, val unchanged: Int)
+
 /**
  * Núcleo de la bóveda de savePoint. Es la única pieza que sabe cifrar y descifrar.
  * La usan tanto el plugin de Capacitor (UI en Angular) como, más adelante, el
@@ -216,6 +220,141 @@ object VaultStore {
         val root = read(ctx)
         root.getJSONObject("entries").remove(id)
         write(ctx, root)
+    }
+
+    // ---------- Respaldo ----------
+    //
+    // El respaldo es el mismo archivo de la bóveda (ya cifrado) dentro de un sobre con metadatos.
+    // Se abre con la contraseña maestra que tenía la bóveda al momento de exportarlo.
+    // Nada se descifra para exportar: el archivo nunca contiene datos en claro.
+
+    private const val BACKUP_FORMAT = "savepoint-backup"
+    private const val BACKUP_VERSION = 1
+
+    @Synchronized
+    fun exportBackup(ctx: Context): ByteArray {
+        requireKey()
+        val vault = read(ctx)
+        return JSONObject()
+            .put("format", BACKUP_FORMAT)
+            .put("version", BACKUP_VERSION)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("vault", vault)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+    }
+
+    fun inspectBackup(bytes: ByteArray): BackupInfo {
+        val env = parseBackup(bytes)
+        return BackupInfo(env.optLong("exportedAt"), env.getJSONObject("vault").getJSONObject("entries").length())
+    }
+
+    /** Sin bóveda en el teléfono: el respaldo pasa a ser la bóveda y queda desbloqueada. Devuelve cuántas entradas trae. */
+    @Synchronized
+    fun restoreBackup(ctx: Context, bytes: ByteArray, master: CharArray): Int {
+        try {
+            if (exists(ctx)) throw VaultException("ALREADY_EXISTS", "Ya existe una bóveda en este teléfono")
+            val vault = parseBackup(bytes).getJSONObject("vault")
+            val dek = backupKey(vault, master)
+            val entries = vault.getJSONObject("entries")
+            // Antes de instalarlo, comprueba que todas las entradas se pueden leer
+            try {
+                entries.keys().asSequence().toList().forEach { id ->
+                    decrypt(dek, entries.getString(id), entryAad(id)).fill(0)
+                }
+            } catch (e: GeneralSecurityException) {
+                dek.fill(0)
+                throw VaultException("INVALID_BACKUP", "El respaldo está dañado")
+            }
+            write(ctx, vault)
+            lock()
+            vaultKey = dek
+            touch()
+            return entries.length()
+        } finally {
+            master.fill('\u0000')
+        }
+    }
+
+    /**
+     * Con bóveda abierta: agrega las entradas del respaldo que no existen y actualiza las que
+     * en el respaldo son más recientes. Nunca borra nada de la bóveda actual.
+     */
+    @Synchronized
+    fun mergeBackup(ctx: Context, bytes: ByteArray, master: CharArray): MergeResult {
+        try {
+            val key = requireKey()
+            val vault = parseBackup(bytes).getJSONObject("vault")
+            val backupDek = backupKey(vault, master)
+            try {
+                val incoming = vault.getJSONObject("entries")
+                val root = read(ctx)
+                val current = root.getJSONObject("entries")
+                var added = 0
+                var updated = 0
+                var unchanged = 0
+                for (id in incoming.keys().asSequence().toList()) {
+                    val entry = try {
+                        decodeEntry(id, decrypt(backupDek, incoming.getString(id), entryAad(id)))
+                    } catch (e: GeneralSecurityException) {
+                        throw VaultException("INVALID_BACKUP", "El respaldo está dañado")
+                    }
+                    if (current.has(id)) {
+                        val mine = decodeEntry(id, decrypt(key, current.getString(id), entryAad(id)))
+                        if (entry.updatedAt <= mine.updatedAt) {
+                            unchanged++
+                            continue
+                        }
+                        updated++
+                    } else {
+                        added++
+                    }
+                    current.put(id, encrypt(key, encodeEntry(entry), entryAad(id)))
+                }
+                if (added + updated > 0) write(ctx, root)
+                return MergeResult(added, updated, unchanged)
+            } finally {
+                backupDek.fill(0)
+            }
+        } finally {
+            master.fill('\u0000')
+        }
+    }
+
+    private fun parseBackup(bytes: ByteArray): JSONObject {
+        val invalid = VaultException("INVALID_BACKUP", "El archivo no es un respaldo de savePoint")
+        val env = try {
+            JSONObject(String(bytes, Charsets.UTF_8))
+        } catch (e: Exception) {
+            throw invalid
+        }
+        if (env.optString("format") != BACKUP_FORMAT) throw invalid
+        if (env.optInt("version") > BACKUP_VERSION) {
+            throw VaultException("INVALID_BACKUP", "El respaldo es de una versión más nueva de savePoint")
+        }
+        val vault = env.optJSONObject("vault") ?: throw invalid
+        if (!vault.has("kdf") || !vault.has("wrappedKey") || vault.optJSONObject("entries") == null) throw invalid
+        return env
+    }
+
+    /** Descifra la llave del respaldo con su contraseña maestra. */
+    private fun backupKey(vault: JSONObject, master: CharArray): ByteArray {
+        val kdf = vault.getJSONObject("kdf")
+        val m = kdf.getInt("m")
+        val t = kdf.getInt("t")
+        val p = kdf.getInt("p")
+        // Un archivo manipulado podría pedir parámetros enormes y colgar el teléfono
+        if (m !in 8_192..1_048_576 || t !in 1..20 || p !in 1..8) {
+            throw VaultException("INVALID_BACKUP", "El respaldo tiene parámetros de cifrado no válidos")
+        }
+        val kek = deriveKey(master, unb64(kdf.getString("salt")), m, t, p)
+        try {
+            return decrypt(kek, vault.getString("wrappedKey"), AAD_KEY)
+        } catch (e: GeneralSecurityException) {
+            throw VaultException("WRONG_PASSWORD", "La contraseña no abre este respaldo")
+        } finally {
+            kek.fill(0)
+        }
     }
 
     // ---------- Internos ----------

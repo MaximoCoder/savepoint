@@ -2,8 +2,8 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IonIcon, NavController } from '../../core/ionic';
 import { addIcons } from 'ionicons';
-import { eyeOffOutline, eyeOutline, fingerPrint, lockClosed, warningOutline } from 'ionicons/icons';
-import { Vault } from '../../plugins/vault';
+import { cloudDownloadOutline, eyeOffOutline, eyeOutline, fingerPrint, lockClosed, warningOutline } from 'ionicons/icons';
+import { BackupInfo, Vault } from '../../plugins/vault';
 import { vaultErrorCode } from '../../core/vault-session.service';
 import { passwordStrength } from '../../core/password-tools';
 
@@ -18,7 +18,9 @@ export class LockPage {
   private readonly nav = inject(NavController);
 
   readonly minLength = MIN_LENGTH;
-  readonly mode = signal<'loading' | 'create' | 'unlock'>('loading');
+  readonly mode = signal<'loading' | 'create' | 'unlock' | 'restore'>('loading');
+  /** Respaldo elegido en la primera pantalla, a la espera de su contraseña. */
+  readonly backup = signal<BackupInfo | null>(null);
   readonly password = signal('');
   readonly confirm = signal('');
   readonly showPassword = signal(false);
@@ -31,12 +33,12 @@ export class LockPage {
   readonly mismatch = computed(() => this.confirm().length > 0 && this.confirm() !== this.password());
   readonly canSubmit = computed(() => {
     if (this.busy()) return false;
-    if (this.mode() === 'unlock') return this.password().length > 0;
+    if (this.mode() === 'unlock' || this.mode() === 'restore') return this.password().length > 0;
     return this.password().length >= MIN_LENGTH && this.password() === this.confirm();
   });
 
   constructor() {
-    addIcons({ lockClosed, eyeOutline, eyeOffOutline, fingerPrint, warningOutline });
+    addIcons({ cloudDownloadOutline, lockClosed, eyeOutline, eyeOffOutline, fingerPrint, warningOutline });
   }
 
   async ionViewWillEnter(): Promise<void> {
@@ -90,8 +92,61 @@ export class LockPage {
     }
   }
 
+  /** Primera vez en este teléfono: en lugar de crear una bóveda, recuperar una desde un respaldo. */
+  async startRestore(): Promise<void> {
+    this.error.set('');
+    try {
+      const info = await Vault.pickBackup();
+      this.backup.set(info);
+      this.password.set('');
+      this.confirm.set('');
+      this.mode.set('restore');
+    } catch (e) {
+      const code = vaultErrorCode(e);
+      if (code === 'BACKUP_CANCELLED') return;
+      this.error.set(code === 'INVALID_BACKUP' ? 'Ese archivo no es un respaldo de savePoint.' : 'No se pudo leer el archivo.');
+    }
+  }
+
+  cancelRestore(): void {
+    Vault.clearPendingBackup().catch(() => undefined);
+    this.backup.set(null);
+    this.password.set('');
+    this.error.set('');
+    this.mode.set('create');
+  }
+
+  formatDate(ms: number): string {
+    if (!ms) return 'fecha desconocida';
+    return new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(ms);
+  }
+
+  private async restore(): Promise<void> {
+    this.busy.set(true);
+    this.error.set('');
+    try {
+      await Vault.restoreBackup({ masterPassword: this.password() });
+      this.password.set('');
+      this.backup.set(null);
+      await this.nav.navigateRoot('/vault');
+    } catch (e) {
+      const code = vaultErrorCode(e);
+      this.error.set(
+        code === 'WRONG_PASSWORD'
+          ? 'Esa contraseña no abre el respaldo. Usa la contraseña maestra que tenías cuando lo exportaste.'
+          : code === 'INVALID_BACKUP'
+            ? 'El respaldo está dañado o no es válido.'
+            : 'No se pudo restaurar el respaldo.',
+      );
+      this.password.set('');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   async submit(): Promise<void> {
     if (!this.canSubmit()) return;
+    if (this.mode() === 'restore') return this.restore();
     this.busy.set(true);
     this.error.set('');
     try {

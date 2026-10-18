@@ -94,6 +94,42 @@
           </div>
         </section>
 
+        <!-- Respaldo -->
+        <section>
+          <h2 class="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-base-content/50">Respaldo</h2>
+          <div class="rounded-box bg-base-200 p-4">
+            <div class="flex items-center gap-4">
+              <div class="grid size-10 shrink-0 place-items-center rounded-full bg-success/15 text-success">
+                <ion-icon name="shield-checkmark-outline"></ion-icon>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium">Respaldo cifrado</p>
+                <p [class]="lastBackupAt() ? 'text-xs text-base-content/60' : 'text-xs text-warning'">
+                  {{ lastBackupLabel() }}
+                </p>
+              </div>
+            </div>
+            <p class="mt-3 text-sm text-base-content/70">
+              Guarda una copia de tu bóveda en Drive o en tu computadora. Está cifrada: solo se abre con tu contraseña
+              maestra. Sin respaldo, si pierdes el teléfono pierdes tus contraseñas.
+            </p>
+            <div class="mt-4 flex flex-col gap-2">
+              <button class="btn btn-primary btn-block" [disabled]="exporting()" (click)="exportBackup()">
+                @if (exporting()) {
+                  <span class="loading loading-spinner loading-sm"></span>
+                } @else {
+                  <ion-icon name="cloud-upload-outline"></ion-icon>
+                }
+                Exportar respaldo
+              </button>
+              <button class="btn btn-block" (click)="pickBackup()">
+                <ion-icon name="cloud-download-outline"></ion-icon>
+                Importar respaldo
+              </button>
+            </div>
+          </div>
+        </section>
+
         <button class="btn btn-ghost btn-block" (click)="lockNow()">
           <ion-icon name="lock-closed-outline"></ion-icon>
           Bloquear ahora
@@ -101,4 +137,44 @@
       }
     </div>
   </main>
+
+  <!-- Importar respaldo -->
+  <dialog #importDialog class="modal modal-bottom sm:modal-middle" (cancel)="closeImport()">
+    <div class="modal-box">
+      <h3 class="text-lg font-semibold">Importar respaldo</h3>
+      @if (importInfo(); as info) {
+        <p class="mt-2 text-sm text-base-content/70">
+          Respaldo del {{ formatDate(info.exportedAt) }} con {{ info.entryCount }}
+          {{ info.entryCount === 1 ? 'contraseña' : 'contraseñas' }}. Se agregarán a tu bóveda; si alguna ya existe, se
+          conserva la versión más reciente. No se borra nada.
+        </p>
+      }
+      <form class="mt-4" (ngSubmit)="confirmImport()">
+        <input
+          type="password"
+          name="importPassword"
+          class="input w-full font-secret"
+          [class.input-error]="!!importError()"
+          placeholder="Contraseña maestra del respaldo"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          [(ngModel)]="importPassword"
+          [disabled]="importing()"
+        />
+        @if (importError()) {
+          <p class="mt-2 text-sm text-error">{{ importError() }}</p>
+        }
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost" [disabled]="importing()" (click)="closeImport()">Cancelar</button>
+          <button type="submit" class="btn btn-primary" [disabled]="importing() || !importPassword()">
+            @if (importing()) {
+              <span class="loading loading-spinner loading-sm"></span>
+            }
+            Importar
+          </button>
+        </div>
+      </form>
+    </div>
+  </dialog>
 </div>

@@ -19,7 +19,8 @@ export type VaultEntryInput = Omit<VaultEntry, 'id' | 'updatedAt'> & { id?: stri
 /**
  * Códigos de error que puede devolver el plugin (error.code):
  * INVALID, ALREADY_EXISTS, WEAK_PASSWORD, WRONG_PASSWORD, NO_VAULT, LOCKED, NOT_FOUND, INTERNAL,
- * BIO_UNAVAILABLE, BIO_NOT_ENABLED, BIO_CANCELLED, BIO_INVALIDATED, BIO_FAILED, UNSUPPORTED
+ * BIO_UNAVAILABLE, BIO_NOT_ENABLED, BIO_CANCELLED, BIO_INVALIDATED, BIO_FAILED, UNSUPPORTED,
+ * BACKUP_CANCELLED, INVALID_BACKUP, NO_BACKUP
  */
 export interface VaultPlugin {
   status(): Promise<{ exists: boolean; unlocked: boolean }>;
@@ -45,6 +46,30 @@ export interface VaultPlugin {
   autofillStatus(): Promise<{ supported: boolean; enabled: boolean }>;
   /** Abre el selector del sistema para elegir savePoint como autocompletado. */
   openAutofillSettings(): Promise<void>;
+
+  /** Fecha (ms) del último respaldo exportado desde este teléfono; 0 si nunca. */
+  backupStatus(): Promise<{ lastBackupAt: number }>;
+  /** Pide al usuario dónde guardar y escribe el respaldo cifrado. */
+  exportBackup(): Promise<{ entryCount: number }>;
+  /** Pide al usuario un archivo de respaldo y lo valida, sin aplicarlo todavía. */
+  pickBackup(): Promise<BackupInfo>;
+  /** Aplica el respaldo elegido: lo instala si no hay bóveda, o lo combina con la actual. */
+  restoreBackup(options: { masterPassword: string }): Promise<RestoreResult>;
+  clearPendingBackup(): Promise<void>;
+}
+
+export interface BackupInfo {
+  exportedAt: number;
+  entryCount: number;
+  /** Ya hay una bóveda en el teléfono (el respaldo se combinará con ella). */
+  hasVault: boolean;
+}
+
+export interface RestoreResult {
+  mode: 'restored' | 'merged';
+  added: number;
+  updated: number;
+  unchanged: number;
 }
 
 export const Vault = registerPlugin<VaultPlugin>('Vault');

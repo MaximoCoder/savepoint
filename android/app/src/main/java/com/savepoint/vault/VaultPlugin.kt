@@ -1,16 +1,25 @@
 package com.savepoint.vault
 
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.view.autofill.AutofillManager
+import androidx.activity.result.ActivityResult
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Puente entre Angular y VaultStore. No contiene lógica criptográfica.
@@ -195,6 +204,130 @@ class VaultPlugin : Plugin() {
             activity.startActivity(Intent(Settings.ACTION_SETTINGS))
         }
         call.resolve()
+    }
+
+    // ---------- Respaldo ----------
+
+    /** Respaldo elegido por el usuario, a la espera de su contraseña maestra. Siempre está cifrado. */
+    private var pendingBackup: ByteArray? = null
+
+    @PluginMethod
+    fun backupStatus(call: PluginCall) = guard(call) {
+        call.resolve(JSObject().put("lastBackupAt", backupPrefs().getLong(KEY_LAST_BACKUP, 0L)))
+    }
+
+    /** Abre el selector del sistema para elegir dónde guardar (Descargas, Drive, etc.). */
+    @PluginMethod
+    fun exportBackup(call: PluginCall) = guard(call) {
+        if (!VaultStore.isUnlocked()) return@guard call.reject("La bóveda está bloqueada", "LOCKED")
+        val date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            putExtra(Intent.EXTRA_TITLE, "savepoint-respaldo-$date.json")
+        }
+        startActivityForResult(call, intent, "onExportLocationPicked")
+    }
+
+    @ActivityCallback
+    private fun onExportLocationPicked(call: PluginCall?, result: ActivityResult) {
+        if (call == null) return
+        val uri = result.data?.data
+        if (result.resultCode != Activity.RESULT_OK || uri == null) {
+            call.reject("Cancelado", "BACKUP_CANCELLED")
+            return
+        }
+        guard(call) {
+            val bytes = VaultStore.exportBackup(context)
+            val out = context.contentResolver.openOutputStream(uri)
+                ?: throw VaultException("IO", "No se pudo escribir el archivo")
+            out.use { it.write(bytes) }
+            backupPrefs().edit().putLong(KEY_LAST_BACKUP, System.currentTimeMillis()).apply()
+            call.resolve(JSObject().put("entryCount", VaultStore.inspectBackup(bytes).entryCount))
+        }
+    }
+
+    /** Abre el selector de archivos para elegir un respaldo. No lo aplica todavía. */
+    @PluginMethod
+    fun pickBackup(call: PluginCall) = guard(call) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "application/octet-stream", "text/plain"))
+        }
+        startActivityForResult(call, intent, "onBackupPicked")
+    }
+
+    @ActivityCallback
+    private fun onBackupPicked(call: PluginCall?, result: ActivityResult) {
+        if (call == null) return
+        val uri = result.data?.data
+        if (result.resultCode != Activity.RESULT_OK || uri == null) {
+            call.reject("Cancelado", "BACKUP_CANCELLED")
+            return
+        }
+        guard(call) {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw VaultException("IO", "No se pudo leer el archivo")
+            val bytes = input.use { readLimited(it) }
+            val info = VaultStore.inspectBackup(bytes)
+            pendingBackup = bytes
+            call.resolve(JSObject().apply {
+                put("exportedAt", info.exportedAt)
+                put("entryCount", info.entryCount)
+                put("hasVault", VaultStore.exists(context))
+            })
+        }
+    }
+
+    /**
+     * Aplica el respaldo elegido con su contraseña maestra.
+     * Sin bóveda: lo instala como bóveda. Con bóveda abierta: combina las entradas.
+     */
+    @PluginMethod
+    fun restoreBackup(call: PluginCall) = guard(call) {
+        val bytes = pendingBackup ?: return@guard call.reject("Primero elige un respaldo", "NO_BACKUP")
+        val pw = call.getString("masterPassword")
+            ?: return@guard call.reject("Falta la contraseña", "INVALID")
+        val res = JSObject()
+        if (!VaultStore.exists(context)) {
+            // Por si quedó una huella vinculada a una bóveda anterior
+            BiometricVault.disable(context)
+            val added = VaultStore.restoreBackup(context, bytes, pw.toCharArray())
+            res.put("mode", "restored").put("added", added).put("updated", 0).put("unchanged", 0)
+        } else {
+            val r = VaultStore.mergeBackup(context, bytes, pw.toCharArray())
+            res.put("mode", "merged").put("added", r.added).put("updated", r.updated).put("unchanged", r.unchanged)
+        }
+        pendingBackup = null
+        call.resolve(res)
+    }
+
+    @PluginMethod
+    fun clearPendingBackup(call: PluginCall) = guard(call) {
+        pendingBackup = null
+        call.resolve()
+    }
+
+    private fun readLimited(input: InputStream): ByteArray {
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            if (out.size() > MAX_BACKUP_BYTES) {
+                throw VaultException("INVALID_BACKUP", "El archivo es demasiado grande para ser un respaldo")
+            }
+        }
+        return out.toByteArray()
+    }
+
+    private fun backupPrefs() = context.getSharedPreferences("savepoint_backup", Context.MODE_PRIVATE)
+
+    private companion object {
+        const val KEY_LAST_BACKUP = "lastBackupAt"
+        const val MAX_BACKUP_BYTES = 20 * 1024 * 1024
     }
 
     private inline fun guard(call: PluginCall, block: () -> Unit) {

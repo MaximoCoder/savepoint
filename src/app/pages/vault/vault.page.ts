@@ -2,18 +2,48 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IonIcon, NavController } from '../../core/ionic';
 import { addIcons } from 'ionicons';
-import { add, chevronForward, close, closeCircle, fingerPrint, keyOutline, lockClosedOutline, searchOutline, settingsOutline } from 'ionicons/icons';
+import {
+  add,
+  chevronForward,
+  close,
+  closeCircle,
+  fingerPrint,
+  keyOutline,
+  lockClosedOutline,
+  searchOutline,
+  settingsOutline,
+  shieldCheckmarkOutline,
+} from 'ionicons/icons';
 import { Vault, VaultEntrySummary } from '../../plugins/vault';
 import { VaultSession } from '../../core/vault-session.service';
 import { displayHost, normalize } from '../../core/password-tools';
 
 const BIO_TIP_KEY = 'savepoint.bioTipDismissed';
+const BACKUP_SNOOZE_KEY = 'savepoint.backupTipSnoozedUntil';
+const BACKUP_MAX_AGE_DAYS = 30;
+const DAY_MS = 86_400_000;
 
 function readFlag(key: string): boolean {
   try {
     return localStorage.getItem(key) === '1';
   } catch {
     return false;
+  }
+}
+
+function readNumber(key: string): number {
+  try {
+    return Number(localStorage.getItem(key) ?? 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeNumber(key: string, value: number): void {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    /* sin almacenamiento: el recordatorio volverá a aparecer */
   }
 }
 
@@ -39,6 +69,9 @@ export class VaultPage {
   readonly loading = signal(true);
   /** Sugerencia única para activar la huella (se puede descartar). */
   readonly suggestBiometric = signal(false);
+  /** Recordatorio de respaldo: nunca se ha hecho o tiene más de 30 días. */
+  readonly suggestBackup = signal(false);
+  readonly backupNever = signal(true);
 
   readonly filtered = computed(() => {
     const q = normalize(this.query());
@@ -47,12 +80,47 @@ export class VaultPage {
   });
 
   constructor() {
-    addIcons({ add, chevronForward, close, closeCircle, fingerPrint, keyOutline, lockClosedOutline, searchOutline, settingsOutline });
+    addIcons({
+      add,
+      chevronForward,
+      close,
+      closeCircle,
+      fingerPrint,
+      keyOutline,
+      lockClosedOutline,
+      searchOutline,
+      settingsOutline,
+      shieldCheckmarkOutline,
+    });
   }
 
   async ionViewWillEnter(): Promise<void> {
     await this.load();
     await this.checkBiometricSuggestion();
+    await this.checkBackupSuggestion();
+  }
+
+  private async checkBackupSuggestion(): Promise<void> {
+    if (this.entries().length === 0 || Date.now() < readNumber(BACKUP_SNOOZE_KEY)) {
+      this.suggestBackup.set(false);
+      return;
+    }
+    try {
+      const { lastBackupAt } = await Vault.backupStatus();
+      this.backupNever.set(!lastBackupAt);
+      this.suggestBackup.set(!lastBackupAt || Date.now() - lastBackupAt > BACKUP_MAX_AGE_DAYS * DAY_MS);
+    } catch {
+      this.suggestBackup.set(false);
+    }
+  }
+
+  snoozeBackupTip(): void {
+    writeNumber(BACKUP_SNOOZE_KEY, Date.now() + 7 * DAY_MS);
+    this.suggestBackup.set(false);
+  }
+
+  goBackup(): void {
+    this.nav.navigateForward('/settings');
   }
 
   private async checkBiometricSuggestion(): Promise<void> {
