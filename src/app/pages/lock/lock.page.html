@@ -106,6 +106,13 @@
           <p class="px-2 text-sm text-error">{{ error() }}</p>
         }
 
+        @if (mode() === 'unlock' && waitSeconds() > 0) {
+          <div role="alert" class="alert alert-warning alert-soft text-sm">
+            <ion-icon name="time-outline"></ion-icon>
+            <span>Por seguridad, podrás volver a intentar en <strong class="font-secret">{{ waitLabel() }}</strong>.</span>
+          </div>
+        }
+
         <button type="submit" class="btn btn-primary btn-lg btn-block mt-2" [disabled]="!canSubmit()">
           @if (busy()) {
             <span class="loading loading-spinner loading-sm"></span>

@@ -28,12 +28,40 @@ import java.util.Locale
 @CapacitorPlugin(name = "Vault")
 class VaultPlugin : Plugin() {
 
+    override fun load() {
+        VaultStore.loadSettings(context)
+    }
+
     @PluginMethod
     fun status(call: PluginCall) = guard(call) {
         call.resolve(JSObject().apply {
             put("exists", VaultStore.exists(context))
             put("unlocked", VaultStore.isUnlocked())
+            put("retryAfterMs", VaultStore.retryAfterMs(context))
+            put("failedAttempts", VaultStore.failedAttempts(context))
         })
+    }
+
+    @PluginMethod
+    fun changeMasterPassword(call: PluginCall) = guard(call) {
+        val current = call.getString("currentPassword")
+            ?: return@guard call.reject("Falta la contraseña actual", "INVALID")
+        val next = call.getString("newPassword")
+            ?: return@guard call.reject("Falta la contraseña nueva", "INVALID")
+        VaultStore.changeMasterPassword(context, current.toCharArray(), next.toCharArray())
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun getLockSettings(call: PluginCall) = guard(call) {
+        call.resolve(JSObject().put("autoLockMinutes", VaultStore.autoLockMinutes))
+    }
+
+    @PluginMethod
+    fun setAutoLock(call: PluginCall) = guard(call) {
+        val minutes = call.getInt("minutes") ?: return@guard call.reject("Falta el tiempo", "INVALID")
+        VaultStore.setAutoLockMinutes(context, minutes)
+        call.resolve()
     }
 
     @PluginMethod
@@ -195,6 +223,7 @@ class VaultPlugin : Plugin() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return@guard call.reject("Requiere Android 8 o superior", "UNSUPPORTED")
         }
+        VaultStore.externalActivityExpected = true
         val picker = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
             .setData(Uri.parse("package:${context.packageName}"))
         try {
@@ -226,6 +255,7 @@ class VaultPlugin : Plugin() {
             type = "application/json"
             putExtra(Intent.EXTRA_TITLE, "savepoint-respaldo-$date.json")
         }
+        VaultStore.externalActivityExpected = true
         startActivityForResult(call, intent, "onExportLocationPicked")
     }
 
@@ -255,6 +285,7 @@ class VaultPlugin : Plugin() {
             type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "application/octet-stream", "text/plain"))
         }
+        VaultStore.externalActivityExpected = true
         startActivityForResult(call, intent, "onBackupPicked")
     }
 

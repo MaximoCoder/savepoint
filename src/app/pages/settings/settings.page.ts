@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { App } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
@@ -6,10 +6,12 @@ import { IonIcon, NavController } from '../../core/ionic';
 import { addIcons } from 'ionicons';
 import {
   arrowBack,
+  chevronForward,
   cloudDownloadOutline,
   cloudUploadOutline,
   fingerPrint,
   flashOutline,
+  keyOutline,
   lockClosedOutline,
   openOutline,
   shieldCheckmarkOutline,
@@ -18,6 +20,9 @@ import {
 import { BackupInfo, Vault } from '../../plugins/vault';
 import { ToastService } from '../../core/toast.service';
 import { VaultSession, vaultErrorCode } from '../../core/vault-session.service';
+import { passwordStrength } from '../../core/password-tools';
+
+const MIN_LENGTH = 12;
 
 @Component({
   selector: 'app-settings',
@@ -36,6 +41,34 @@ export class SettingsPage {
   readonly autofillSupported = signal(true);
   readonly autofillEnabled = signal(false);
 
+  // Bloqueo automático
+  readonly autoLockOptions = [
+    { minutes: 0, label: 'Al salir' },
+    { minutes: 1, label: '1 min' },
+    { minutes: 5, label: '5 min' },
+    { minutes: 15, label: '15 min' },
+  ];
+  readonly autoLockMinutes = signal(5);
+
+  // Cambio de contraseña maestra
+  readonly minLength = MIN_LENGTH;
+  readonly currentPassword = signal('');
+  readonly newPassword = signal('');
+  readonly confirmPassword = signal('');
+  readonly pwBusy = signal(false);
+  readonly pwError = signal<'' | 'current' | 'other'>('');
+  readonly pwErrorText = signal('');
+  readonly newStrength = computed(() => passwordStrength(this.newPassword()));
+  readonly pwMismatch = computed(() => this.confirmPassword().length > 0 && this.confirmPassword() !== this.newPassword());
+  readonly canChangePassword = computed(
+    () =>
+      !this.pwBusy() &&
+      this.currentPassword().length > 0 &&
+      this.newPassword().length >= MIN_LENGTH &&
+      this.newPassword() === this.confirmPassword(),
+  );
+  private readonly passwordDialog = viewChild<ElementRef<HTMLDialogElement>>('passwordDialog');
+
   // Respaldo
   readonly lastBackupAt = signal(0);
   readonly exporting = signal(false);
@@ -50,10 +83,12 @@ export class SettingsPage {
   constructor() {
     addIcons({
       arrowBack,
+      chevronForward,
       cloudDownloadOutline,
       cloudUploadOutline,
       fingerPrint,
       flashOutline,
+      keyOutline,
       lockClosedOutline,
       openOutline,
       shieldCheckmarkOutline,
@@ -74,12 +109,14 @@ export class SettingsPage {
 
   private async refresh(): Promise<void> {
     try {
-      const [bio, fill, backup] = await Promise.all([
+      const [bio, fill, backup, lock] = await Promise.all([
         Vault.biometricStatus(),
         Vault.autofillStatus(),
         Vault.backupStatus(),
+        Vault.getLockSettings(),
       ]);
       this.lastBackupAt.set(backup.lastBackupAt);
+      this.autoLockMinutes.set(lock.autoLockMinutes);
       this.bioAvailable.set(bio.available);
       this.bioEnabled.set(bio.enabled);
       this.autofillSupported.set(fill.supported);
@@ -127,6 +164,78 @@ export class SettingsPage {
       await Vault.openAutofillSettings();
     } catch {
       this.toast.show('No se pudieron abrir los ajustes del sistema', 'error');
+    }
+  }
+
+  // ---------- Bloqueo automático ----------
+
+  autoLockHint(): string {
+    const m = this.autoLockMinutes();
+    if (m === 0) return 'La bóveda se cierra en cuanto sales de la app o apagas la pantalla.';
+    return `La bóveda se cierra sola tras ${m} ${m === 1 ? 'minuto' : 'minutos'} sin uso.`;
+  }
+
+  async setAutoLock(minutes: number): Promise<void> {
+    const previous = this.autoLockMinutes();
+    if (minutes === previous) return;
+    this.autoLockMinutes.set(minutes);
+    try {
+      await Vault.setAutoLock({ minutes });
+    } catch {
+      this.autoLockMinutes.set(previous);
+      this.toast.show('No se pudo cambiar el bloqueo automático', 'error');
+    }
+  }
+
+  // ---------- Contraseña maestra ----------
+
+  openChangePassword(): void {
+    this.resetPasswordForm();
+    this.passwordDialog()?.nativeElement.showModal();
+  }
+
+  closeChangePassword(): void {
+    this.passwordDialog()?.nativeElement.close();
+    this.resetPasswordForm();
+  }
+
+  private resetPasswordForm(): void {
+    this.currentPassword.set('');
+    this.newPassword.set('');
+    this.confirmPassword.set('');
+    this.pwError.set('');
+    this.pwErrorText.set('');
+  }
+
+  async changePassword(): Promise<void> {
+    if (!this.canChangePassword()) return;
+    if (this.newPassword() === this.currentPassword()) {
+      this.pwError.set('other');
+      this.pwErrorText.set('La contraseña nueva es igual a la actual.');
+      return;
+    }
+    this.pwBusy.set(true);
+    this.pwError.set('');
+    this.pwErrorText.set('');
+    try {
+      await Vault.changeMasterPassword({ currentPassword: this.currentPassword(), newPassword: this.newPassword() });
+      this.closeChangePassword();
+      this.toast.show('Contraseña maestra cambiada. Exporta un respaldo nuevo.', 'success', 3500);
+    } catch (e) {
+      const code = vaultErrorCode(e);
+      if (code === 'WRONG_PASSWORD') {
+        this.pwError.set('current');
+        this.pwErrorText.set('La contraseña actual no es correcta.');
+        this.currentPassword.set('');
+      } else if (code === 'WEAK_PASSWORD') {
+        this.pwError.set('other');
+        this.pwErrorText.set(`La contraseña nueva debe tener al menos ${MIN_LENGTH} caracteres.`);
+      } else {
+        this.closeChangePassword();
+        await this.session.handleError(e, 'No se pudo cambiar la contraseña maestra.');
+      }
+    } finally {
+      this.pwBusy.set(false);
     }
   }
 

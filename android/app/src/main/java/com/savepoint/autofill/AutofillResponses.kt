@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.service.autofill.Dataset
 import android.service.autofill.FillResponse
+import android.service.autofill.SaveInfo
 import android.view.autofill.AutofillValue
 import android.widget.RemoteViews
 import androidx.annotation.RequiresApi
@@ -60,15 +61,31 @@ object AutofillResponses {
             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
         val sender = PendingIntent.getActivity(ctx, ++requestCode, intent, flags).intentSender
         val presentation = item(ctx, "Desbloquear savePoint", "Toca para elegir una contraseña")
-        return FillResponse.Builder()
+        val builder = FillResponse.Builder()
             .setAuthentication(fields.allIds.toTypedArray(), sender, presentation)
+        saveInfo(fields)?.let { builder.setSaveInfo(it) }
+        return builder.build()
+    }
+
+    /**
+     * Le pide a Android que, al terminar el inicio de sesión, ofrezca "Guardar en savePoint".
+     * Android solo lo muestra si el usuario escribió algo distinto a lo que se autocompletó.
+     */
+    fun saveInfo(fields: AutofillFields): SaveInfo? {
+        if (fields.passwordIds.isEmpty()) return null
+        var type = SaveInfo.SAVE_DATA_TYPE_PASSWORD
+        if (fields.usernameIds.isNotEmpty()) type = type or SaveInfo.SAVE_DATA_TYPE_USERNAME
+        return SaveInfo.Builder(type, fields.passwordIds.toTypedArray())
+            .apply { if (fields.usernameIds.isNotEmpty()) setOptionalIds(fields.usernameIds.toTypedArray()) }
+            // Muchas apps no cierran la pantalla al iniciar sesión: basta con que los campos desaparezcan
+            .setFlags(SaveInfo.FLAG_SAVE_ON_ALL_VIEWS_INVISIBLE)
             .build()
     }
 
     /**
      * Bóveda abierta: una sugerencia por entrada. Primero las que coinciden con la app o sitio;
      * si ninguna coincide, todas, para que el usuario elija.
-     * Devuelve null si no hay nada que ofrecer.
+     * Devuelve null si no hay nada que ofrecer ni que guardar.
      * (Dataset.Builder con RemoteViews está deprecado en Android 13, pero funciona en todas las versiones.)
      */
     @Suppress("DEPRECATION")
@@ -101,7 +118,10 @@ object AutofillResponses {
                 added++
             }
         }
-        return if (added > 0) builder.build() else null
+        val save = saveInfo(fields)
+        save?.let { builder.setSaveInfo(it) }
+        // Sin sugerencias pero con campo de contraseña: igual se ofrece guardar lo que escriba
+        return if (added > 0 || save != null) builder.build() else null
     }
 
     private fun item(ctx: Context, title: String, subtitle: String): RemoteViews =

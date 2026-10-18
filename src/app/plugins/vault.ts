@@ -20,13 +20,19 @@ export type VaultEntryInput = Omit<VaultEntry, 'id' | 'updatedAt'> & { id?: stri
  * Códigos de error que puede devolver el plugin (error.code):
  * INVALID, ALREADY_EXISTS, WEAK_PASSWORD, WRONG_PASSWORD, NO_VAULT, LOCKED, NOT_FOUND, INTERNAL,
  * BIO_UNAVAILABLE, BIO_NOT_ENABLED, BIO_CANCELLED, BIO_INVALIDATED, BIO_FAILED, UNSUPPORTED,
- * BACKUP_CANCELLED, INVALID_BACKUP, NO_BACKUP
+ * BACKUP_CANCELLED, INVALID_BACKUP, NO_BACKUP, THROTTLED
  */
 export interface VaultPlugin {
-  status(): Promise<{ exists: boolean; unlocked: boolean }>;
+  /** retryAfterMs > 0: demasiados intentos fallidos, hay que esperar. */
+  status(): Promise<{ exists: boolean; unlocked: boolean; retryAfterMs: number; failedAttempts: number }>;
   create(options: { masterPassword: string }): Promise<void>;
   unlock(options: { masterPassword: string }): Promise<void>;
   lock(): Promise<void>;
+  /** Vuelve a envolver la llave con la contraseña nueva; las entradas no cambian. */
+  changeMasterPassword(options: { currentPassword: string; newPassword: string }): Promise<void>;
+  /** 0 = bloquear al salir de la app; 1, 5 o 15 minutos sin uso. */
+  getLockSettings(): Promise<{ autoLockMinutes: number }>;
+  setAutoLock(options: { minutes: number }): Promise<void>;
   list(): Promise<{ entries: VaultEntrySummary[] }>;
   get(options: { id: string }): Promise<{ entry: VaultEntry }>;
   save(options: { entry: VaultEntryInput }): Promise<{ id: string }>;

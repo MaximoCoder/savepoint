@@ -1,5 +1,7 @@
 package com.savepoint.autofill
 
+import android.app.PendingIntent
+import android.content.Intent
 import android.os.Build
 import android.os.CancellationSignal
 import android.service.autofill.AutofillService
@@ -7,6 +9,7 @@ import android.service.autofill.FillCallback
 import android.service.autofill.FillRequest
 import android.service.autofill.SaveCallback
 import android.service.autofill.SaveRequest
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import com.savepoint.vault.VaultStore
 
@@ -52,8 +55,41 @@ class SavePointAutofillService : AutofillService() {
         }
     }
 
-    /** Guardar credenciales nuevas desde otras apps queda para una siguiente versión. */
+    /**
+     * El usuario aceptó "Guardar en savePoint" después de iniciar sesión en otra app.
+     * Con la bóveda abierta se guarda directo; si está bloqueada, se abre el desbloqueo.
+     */
     override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
-        callback.onSuccess()
+        try {
+            val credential = CredentialExtractor.extract(request.fillContexts)
+            if (credential == null || credential.packageName == packageName) {
+                callback.onFailure("No se encontró una contraseña para guardar")
+                return
+            }
+            if (!VaultStore.exists(this)) {
+                callback.onFailure("Primero crea tu bóveda en savePoint")
+                return
+            }
+
+            if (VaultStore.isUnlocked()) {
+                val outcome = CredentialSaver.save(this, credential)
+                Toast.makeText(this, CredentialSaver.message(outcome), Toast.LENGTH_SHORT).show()
+                callback.onSuccess()
+                return
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                // La credencial se queda en memoria; la actividad solo recibe la orden de desbloquear
+                PendingSave.put(credential)
+                val intent = Intent(this, AutofillSaveActivity::class.java)
+                val flags = PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                val sender = PendingIntent.getActivity(this, 0, intent, flags).intentSender
+                callback.onSuccess(sender)
+            } else {
+                callback.onFailure("Abre savePoint y vuelve a iniciar sesión para guardar")
+            }
+        } catch (e: Exception) {
+            callback.onFailure("No se pudo guardar en savePoint")
+        }
     }
 }

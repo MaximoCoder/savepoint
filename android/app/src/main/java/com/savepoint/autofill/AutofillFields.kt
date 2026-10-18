@@ -14,7 +14,12 @@ data class AutofillFields(
     val webDomain: String?,
     val usernameIds: List<AutofillId>,
     val passwordIds: List<AutofillId>,
+    /** Texto actual de cada campo. Solo se usa al guardar; nunca se pone en un Intent. */
+    val values: Map<AutofillId, String> = emptyMap(),
 ) {
+    fun usernameValue(): String? = usernameIds.firstNotNullOfOrNull { values[it]?.takeIf(String::isNotBlank) }
+    fun passwordValue(): String? = passwordIds.firstNotNullOfOrNull { values[it]?.takeIf(String::isNotEmpty) }
+
     val allIds: List<AutofillId> get() = usernameIds + passwordIds
     val isEmpty: Boolean get() = usernameIds.isEmpty() && passwordIds.isEmpty()
 
@@ -54,6 +59,7 @@ object StructureParser {
 
     fun parse(structure: AssistStructure): AutofillFields {
         val found = mutableListOf<Pair<AutofillId, Kind>>()
+        val values = mutableMapOf<AutofillId, String>()
         var domain: String? = null
 
         fun walk(node: AssistStructure.ViewNode) {
@@ -61,6 +67,7 @@ object StructureParser {
             val id = node.autofillId
             if (id != null && node.autofillType == View.AUTOFILL_TYPE_TEXT && node.visibility == View.VISIBLE) {
                 classify(node)?.let { found += id to it }
+                node.autofillValue?.takeIf { it.isText }?.textValue?.toString()?.let { values[id] = it }
             }
             for (i in 0 until node.childCount) walk(node.getChildAt(i))
         }
@@ -83,6 +90,7 @@ object StructureParser {
             webDomain = domain,
             usernameIds = usernames,
             passwordIds = passwords,
+            values = values,
         )
     }
 

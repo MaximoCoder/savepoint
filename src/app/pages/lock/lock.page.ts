@@ -1,20 +1,22 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IonIcon, NavController } from '../../core/ionic';
 import { addIcons } from 'ionicons';
-import { cloudDownloadOutline, eyeOffOutline, eyeOutline, fingerPrint, lockClosed, warningOutline } from 'ionicons/icons';
+import { cloudDownloadOutline, eyeOffOutline, eyeOutline, fingerPrint, lockClosed, timeOutline, warningOutline } from 'ionicons/icons';
 import { BackupInfo, Vault } from '../../plugins/vault';
 import { vaultErrorCode } from '../../core/vault-session.service';
 import { passwordStrength } from '../../core/password-tools';
 
 const MIN_LENGTH = 12;
+/** Igual que en VaultStore: intentos sin espera antes de empezar a penalizar. */
+const FREE_ATTEMPTS = 5;
 
 @Component({
   selector: 'app-lock',
   templateUrl: './lock.page.html',
   imports: [FormsModule, IonIcon],
 })
-export class LockPage {
+export class LockPage implements OnDestroy {
   private readonly nav = inject(NavController);
 
   readonly minLength = MIN_LENGTH;
@@ -28,17 +30,23 @@ export class LockPage {
   readonly error = signal('');
   /** La huella está activada y disponible en este teléfono. */
   readonly biometric = signal(false);
+  /** Segundos que faltan para poder volver a intentar tras varios fallos. */
+  readonly waitSeconds = signal(0);
+  readonly failedAttempts = signal(0);
+  readonly attemptsLeft = computed(() => Math.max(FREE_ATTEMPTS - this.failedAttempts(), 0));
+  private waitTimer?: ReturnType<typeof setInterval>;
 
   readonly strength = computed(() => passwordStrength(this.password()));
   readonly mismatch = computed(() => this.confirm().length > 0 && this.confirm() !== this.password());
   readonly canSubmit = computed(() => {
     if (this.busy()) return false;
-    if (this.mode() === 'unlock' || this.mode() === 'restore') return this.password().length > 0;
+    if (this.mode() === 'unlock') return this.password().length > 0 && this.waitSeconds() === 0;
+    if (this.mode() === 'restore') return this.password().length > 0;
     return this.password().length >= MIN_LENGTH && this.password() === this.confirm();
   });
 
   constructor() {
-    addIcons({ cloudDownloadOutline, lockClosed, eyeOutline, eyeOffOutline, fingerPrint, warningOutline });
+    addIcons({ cloudDownloadOutline, lockClosed, eyeOutline, eyeOffOutline, fingerPrint, timeOutline, warningOutline });
   }
 
   async ionViewWillEnter(): Promise<void> {
@@ -47,12 +55,14 @@ export class LockPage {
     this.error.set('');
     this.showPassword.set(false);
     try {
-      const { exists, unlocked } = await Vault.status();
+      const { exists, unlocked, retryAfterMs, failedAttempts } = await Vault.status();
       if (unlocked) {
         await this.nav.navigateRoot('/vault');
         return;
       }
       this.mode.set(exists ? 'unlock' : 'create');
+      this.failedAttempts.set(failedAttempts);
+      if (retryAfterMs > 0) this.startWait(retryAfterMs);
       if (exists) await this.checkBiometric();
     } catch {
       this.mode.set('unlock');
@@ -90,6 +100,29 @@ export class LockPage {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  ngOnDestroy(): void {
+    clearInterval(this.waitTimer);
+  }
+
+  /** Cuenta regresiva tras demasiados intentos; el botón se habilita al terminar. */
+  private startWait(ms: number): void {
+    clearInterval(this.waitTimer);
+    const until = Date.now() + ms;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+      this.waitSeconds.set(left);
+      if (left === 0) clearInterval(this.waitTimer);
+    };
+    tick();
+    this.waitTimer = setInterval(tick, 1000);
+  }
+
+  waitLabel(): string {
+    const s = this.waitSeconds();
+    const m = Math.floor(s / 60);
+    return m > 0 ? `${m}:${String(s % 60).padStart(2, '0')}` : `${s} s`;
   }
 
   /** Primera vez en este teléfono: en lugar de crear una bóveda, recuperar una desde un respaldo. */
@@ -161,16 +194,33 @@ export class LockPage {
       await this.nav.navigateRoot('/vault');
     } catch (e) {
       const code = vaultErrorCode(e);
+      if (code === 'WRONG_PASSWORD' || code === 'THROTTLED') {
+        this.password.set('');
+        const st = await Vault.status().catch(() => null);
+        if (st) {
+          this.failedAttempts.set(st.failedAttempts);
+          if (st.retryAfterMs > 0) this.startWait(st.retryAfterMs);
+        }
+      }
       this.error.set(
         code === 'WRONG_PASSWORD'
-          ? 'Contraseña incorrecta. Inténtalo de nuevo.'
-          : code === 'WEAK_PASSWORD'
-            ? `Usa al menos ${MIN_LENGTH} caracteres.`
-            : 'Algo salió mal. Inténtalo de nuevo.',
+          ? this.wrongPasswordMessage()
+          : code === 'THROTTLED'
+            ? 'Demasiados intentos fallidos. Espera para volver a intentar.'
+            : code === 'WEAK_PASSWORD'
+              ? `Usa al menos ${MIN_LENGTH} caracteres.`
+              : 'Algo salió mal. Inténtalo de nuevo.',
       );
-      if (code === 'WRONG_PASSWORD') this.password.set('');
     } finally {
       this.busy.set(false);
     }
+  }
+
+  private wrongPasswordMessage(): string {
+    const left = this.attemptsLeft();
+    if (left > 0 && left <= 2) {
+      return `Contraseña incorrecta. Te ${left === 1 ? 'queda 1 intento' : `quedan ${left} intentos`} antes de tener que esperar.`;
+    }
+    return 'Contraseña incorrecta. Inténtalo de nuevo.';
   }
 }

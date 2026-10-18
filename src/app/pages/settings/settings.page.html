@@ -47,15 +47,42 @@
               }
             </label>
 
-            <div class="flex items-center gap-4 px-4 py-4">
-              <div class="grid size-10 shrink-0 place-items-center rounded-full bg-base-300 text-base-content/70">
-                <ion-icon name="time-outline"></ion-icon>
+            <div class="px-4 py-4">
+              <div class="flex items-center gap-4">
+                <div class="grid size-10 shrink-0 place-items-center rounded-full bg-base-300 text-base-content/70">
+                  <ion-icon name="time-outline"></ion-icon>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="font-medium">Bloqueo automático</p>
+                  <p class="text-xs text-base-content/60">{{ autoLockHint() }}</p>
+                </div>
               </div>
-              <div class="min-w-0 flex-1">
-                <p class="font-medium">Bloqueo automático</p>
-                <p class="text-xs text-base-content/60">La bóveda se cierra sola tras 5 minutos sin uso.</p>
+              <div class="join mt-3 w-full" role="radiogroup" aria-label="Bloqueo automático">
+                @for (opt of autoLockOptions; track opt.minutes) {
+                  <button
+                    type="button"
+                    role="radio"
+                    class="btn join-item btn-sm flex-1"
+                    [class.btn-primary]="autoLockMinutes() === opt.minutes"
+                    [attr.aria-checked]="autoLockMinutes() === opt.minutes"
+                    (click)="setAutoLock(opt.minutes)"
+                  >
+                    {{ opt.label }}
+                  </button>
+                }
               </div>
             </div>
+
+            <button type="button" class="flex w-full items-center gap-4 px-4 py-4 text-left" (click)="openChangePassword()">
+              <div class="grid size-10 shrink-0 place-items-center rounded-full bg-base-300 text-base-content/70">
+                <ion-icon name="key-outline"></ion-icon>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium">Cambiar contraseña maestra</p>
+                <p class="text-xs text-base-content/60">Tus contraseñas guardadas y la huella siguen igual.</p>
+              </div>
+              <ion-icon name="chevron-forward" class="text-base-content/40"></ion-icon>
+            </button>
           </div>
         </section>
 
@@ -78,7 +105,8 @@
             </div>
             <p class="mt-3 text-sm text-base-content/70">
               Al tocar un campo de usuario o contraseña en otra app, savePoint te ofrece tus cuentas y escribe la contraseña
-              directo en el campo. No pasa por el portapapeles ni por el teclado.
+              directo en el campo. No pasa por el portapapeles ni por el teclado. Y cuando inicies sesión con una cuenta
+              que no tienes guardada, te ofrece guardarla.
             </p>
             @if (autofillSupported()) {
               <button class="btn btn-block mt-4" [class.btn-primary]="!autofillEnabled()" (click)="openAutofill()">
@@ -137,6 +165,86 @@
       }
     </div>
   </main>
+
+  <!-- Cambiar contraseña maestra -->
+  <dialog #passwordDialog class="modal modal-bottom sm:modal-middle" (cancel)="closeChangePassword()">
+    <div class="modal-box">
+      <h3 class="text-lg font-semibold">Cambiar contraseña maestra</h3>
+      <form class="mt-4 flex flex-col gap-3" (ngSubmit)="changePassword()">
+        <input
+          type="password"
+          name="currentPassword"
+          class="input w-full font-secret"
+          [class.input-error]="pwError() === 'current'"
+          placeholder="Contraseña actual"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          [(ngModel)]="currentPassword"
+          [disabled]="pwBusy()"
+        />
+        <div>
+          <input
+            type="password"
+            name="newPassword"
+            class="input w-full font-secret"
+            placeholder="Contraseña nueva"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            [(ngModel)]="newPassword"
+            [disabled]="pwBusy()"
+          />
+          @if (newPassword()) {
+            <div class="mt-2 flex items-center gap-2 px-1">
+              <progress
+                class="progress h-1.5 flex-1"
+                [class.progress-error]="newStrength().score <= 1"
+                [class.progress-warning]="newStrength().score === 2"
+                [class.progress-success]="newStrength().score >= 3"
+                [value]="newStrength().score + 1"
+                max="5"
+              ></progress>
+              <span class="w-24 text-right text-xs" [class.text-success]="newPassword().length >= minLength">
+                {{ newPassword().length }} / {{ minLength }} mín.
+              </span>
+            </div>
+          }
+        </div>
+        <input
+          type="password"
+          name="confirmPassword"
+          class="input w-full font-secret"
+          [class.input-error]="pwMismatch()"
+          placeholder="Repite la contraseña nueva"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          [(ngModel)]="confirmPassword"
+          [disabled]="pwBusy()"
+        />
+        @if (pwMismatch()) {
+          <p class="text-xs text-error">Las contraseñas no coinciden.</p>
+        }
+        @if (pwErrorText()) {
+          <p class="text-sm text-error">{{ pwErrorText() }}</p>
+        }
+        <p class="text-xs text-base-content/50">
+          Los respaldos que ya exportaste se siguen abriendo con la contraseña anterior. Exporta uno nuevo después del
+          cambio.
+        </p>
+        <div class="modal-action mt-2">
+          <button type="button" class="btn btn-ghost" [disabled]="pwBusy()" (click)="closeChangePassword()">Cancelar</button>
+          <button type="submit" class="btn btn-primary" [disabled]="!canChangePassword()">
+            @if (pwBusy()) {
+              <span class="loading loading-spinner loading-sm"></span>
+            }
+            Cambiar
+          </button>
+        </div>
+      </form>
+    </div>
+  </dialog>
 
   <!-- Importar respaldo -->
   <dialog #importDialog class="modal modal-bottom sm:modal-middle" (cancel)="closeImport()">

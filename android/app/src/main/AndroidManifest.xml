@@ -42,6 +42,13 @@
             android:excludeFromRecents="true"
             android:theme="@style/SavePoint.AutofillAuth" />
 
+        <!-- Desbloqueo para guardar una contraseña que escribiste en otra app -->
+        <activity
+            android:name=".autofill.AutofillSaveActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/SavePoint.AutofillAuth" />
+
         <!-- Borrado del portapapeles aunque la app esté en segundo plano -->
         <service
             android:name=".vault.ClipboardClearJob"

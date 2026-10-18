@@ -63,8 +63,83 @@ object VaultStore {
     private var vaultKey: ByteArray? = null
     private var lastActivity = 0L
 
+    // ---------- Ajustes de bloqueo e intentos fallidos ----------
+
+    private const val PREFS = "savepoint_vault"
+    private const val KEY_AUTOLOCK_MIN = "autoLockMinutes"
+    private const val KEY_FAILED = "failedAttempts"
+    private const val KEY_LOCKED_UNTIL = "lockedUntil"
+
+    /** Minutos permitidos para el bloqueo automático. 0 = al salir de la app. */
+    val AUTOLOCK_OPTIONS = setOf(0, 1, 5, 15)
+
+    /** Intentos fallidos sin penalización; después la espera se duplica en cada fallo. */
+    private const val FREE_ATTEMPTS = 5
+    private const val BASE_DELAY_MS = 30_000L
+    private const val MAX_DELAY_MS = 30 * 60_000L
+
+    @Volatile private var settingsLoaded = false
+    @Volatile var autoLockMinutes = 5
+        private set
+
+    /**
+     * Lo activa el plugin justo antes de abrir una pantalla del sistema (selector de archivos,
+     * ajustes de autocompletado) para que "bloquear al salir" no cierre la bóveda a media operación.
+     */
+    @Volatile var externalActivityExpected = false
+
     /** Tiempo sin actividad tras el cual la bóveda se bloquea sola. */
-    var autoLockMillis: Long = 5 * 60 * 1000L
+    private val autoLockMillis: Long
+        get() = if (autoLockMinutes == 0) 60_000L else autoLockMinutes * 60_000L
+
+    /** Con "bloquear al salir", MainActivity llama a esto cuando la app deja de verse. */
+    fun shouldLockOnLeave(): Boolean = autoLockMinutes == 0 && !externalActivityExpected
+
+    fun loadSettings(ctx: Context) {
+        if (settingsLoaded) return
+        autoLockMinutes = prefs(ctx).getInt(KEY_AUTOLOCK_MIN, 5).takeIf { it in AUTOLOCK_OPTIONS } ?: 5
+        settingsLoaded = true
+    }
+
+    fun setAutoLockMinutes(ctx: Context, minutes: Int) {
+        if (minutes !in AUTOLOCK_OPTIONS) throw VaultException("INVALID", "Tiempo de bloqueo no válido")
+        prefs(ctx).edit().putInt(KEY_AUTOLOCK_MIN, minutes).apply()
+        autoLockMinutes = minutes
+        settingsLoaded = true
+    }
+
+    /** Milisegundos que faltan para poder volver a intentar la contraseña maestra. */
+    fun retryAfterMs(ctx: Context): Long {
+        val until = prefs(ctx).getLong(KEY_LOCKED_UNTIL, 0L)
+        val now = System.currentTimeMillis()
+        // Si el reloj del teléfono se atrasó, no dejar una espera mayor al máximo
+        return (until - now).coerceIn(0L, MAX_DELAY_MS)
+    }
+
+    fun failedAttempts(ctx: Context): Int = prefs(ctx).getInt(KEY_FAILED, 0)
+
+    private fun registerFailure(ctx: Context) {
+        val failed = failedAttempts(ctx) + 1
+        val editor = prefs(ctx).edit().putInt(KEY_FAILED, failed)
+        if (failed >= FREE_ATTEMPTS) {
+            val exp = (failed - FREE_ATTEMPTS).coerceAtMost(10)
+            val delay = (BASE_DELAY_MS shl exp).coerceAtMost(MAX_DELAY_MS)
+            editor.putLong(KEY_LOCKED_UNTIL, System.currentTimeMillis() + delay)
+        }
+        editor.apply()
+    }
+
+    private fun resetFailures(ctx: Context) {
+        prefs(ctx).edit().remove(KEY_FAILED).remove(KEY_LOCKED_UNTIL).apply()
+    }
+
+    private fun throttleMessage(ms: Long): String {
+        val secs = (ms + 999) / 1000
+        val text = if (secs >= 60) "${(secs + 59) / 60} min" else "$secs s"
+        return "Demasiados intentos. Espera $text para volver a intentar."
+    }
+
+    private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     // ---------- Estado ----------
 
@@ -91,6 +166,7 @@ object VaultStore {
     @Synchronized
     fun create(ctx: Context, master: CharArray) {
         try {
+            loadSettings(ctx)
             if (exists(ctx)) throw VaultException("ALREADY_EXISTS", "La bóveda ya existe")
             if (master.size < MIN_MASTER_LEN) {
                 throw VaultException("WEAK_PASSWORD", "La contraseña maestra debe tener al menos $MIN_MASTER_LEN caracteres")
@@ -124,6 +200,9 @@ object VaultStore {
     @Synchronized
     fun unlock(ctx: Context, master: CharArray) {
         try {
+            loadSettings(ctx)
+            val wait = retryAfterMs(ctx)
+            if (wait > 0) throw VaultException("THROTTLED", throttleMessage(wait))
             val root = read(ctx)
             val kdf = root.getJSONObject("kdf")
             val kek = deriveKey(
@@ -137,13 +216,58 @@ object VaultStore {
                 lock()
                 vaultKey = decrypt(kek, root.getString("wrappedKey"), AAD_KEY)
             } catch (e: GeneralSecurityException) {
+                registerFailure(ctx)
+                val wait = retryAfterMs(ctx)
+                if (wait > 0) throw VaultException("THROTTLED", throttleMessage(wait))
                 throw VaultException("WRONG_PASSWORD", "Contraseña maestra incorrecta")
             } finally {
                 kek.fill(0)
             }
+            resetFailures(ctx)
             touch()
         } finally {
             master.fill('\u0000')
+        }
+    }
+
+    /**
+     * Cambia la contraseña maestra. Solo se vuelve a envolver la llave de la bóveda con la nueva,
+     * así que las entradas y la huella siguen igual. Los respaldos ya exportados conservan la anterior.
+     */
+    @Synchronized
+    fun changeMasterPassword(ctx: Context, current: CharArray, next: CharArray) {
+        try {
+            val key = requireKey()
+            if (next.size < MIN_MASTER_LEN) {
+                throw VaultException("WEAK_PASSWORD", "La contraseña maestra debe tener al menos $MIN_MASTER_LEN caracteres")
+            }
+            val root = read(ctx)
+            val kdf = root.getJSONObject("kdf")
+            val oldKek = deriveKey(current, unb64(kdf.getString("salt")), kdf.getInt("m"), kdf.getInt("t"), kdf.getInt("p"))
+            try {
+                decrypt(oldKek, root.getString("wrappedKey"), AAD_KEY).fill(0)
+            } catch (e: GeneralSecurityException) {
+                throw VaultException("WRONG_PASSWORD", "La contraseña actual no es correcta")
+            } finally {
+                oldKek.fill(0)
+            }
+
+            val salt = randomBytes(SALT_LEN)
+            val newKek = deriveKey(next, salt, ARGON_MEMORY_KIB, ARGON_ITERATIONS, ARGON_PARALLELISM)
+            val wrapped = try { encrypt(newKek, key, AAD_KEY) } finally { newKek.fill(0) }
+            root.put(
+                "kdf", JSONObject()
+                    .put("alg", "argon2id")
+                    .put("salt", b64(salt))
+                    .put("m", ARGON_MEMORY_KIB)
+                    .put("t", ARGON_ITERATIONS)
+                    .put("p", ARGON_PARALLELISM)
+            ).put("wrappedKey", wrapped)
+            write(ctx, root)
+            touch()
+        } finally {
+            current.fill('\u0000')
+            next.fill('\u0000')
         }
     }
 
@@ -168,6 +292,8 @@ object VaultStore {
                     throw VaultException("INVALID_KEY", "La llave no corresponde a esta bóveda")
                 }
             }
+            loadSettings(ctx)
+            resetFailures(ctx)
             lock()
             vaultKey = dek.copyOf()
             touch()
@@ -267,6 +393,8 @@ object VaultStore {
                 throw VaultException("INVALID_BACKUP", "El respaldo está dañado")
             }
             write(ctx, vault)
+            loadSettings(ctx)
+            resetFailures(ctx)
             lock()
             vaultKey = dek
             touch()
