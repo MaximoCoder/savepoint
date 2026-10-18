@@ -1,0 +1,7 @@
+{
+  "name": "savepoint",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular-standalone"
+}
