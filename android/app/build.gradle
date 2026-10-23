@@ -1,6 +1,24 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 
+// Firma de release: en tu compu lee android/keystore.properties (no se sube a git);
+// en GitHub Actions lee variables de entorno que vienen de los secrets del repo.
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file('keystore.properties')
+if (keystoreFile.exists()) {
+    keystoreFile.withInputStream { keystoreProps.load(it) }
+}
+def signingValue = { String key, String env ->
+    def v = keystoreProps.getProperty(key) ?: System.getenv(env)
+    return v ? v.trim() : null
+}
+def releaseStoreFile = signingValue('storeFile', 'SAVEPOINT_KEYSTORE_PATH')
+def hasReleaseSigning = releaseStoreFile != null && rootProject.file(releaseStoreFile).exists()
+
+// La versión puede venir del tag (v1.2.0) y del número de ejecución del workflow
+def appVersionCode = (project.findProperty('versionCode') ?: '1') as Integer
+def appVersionName = (project.findProperty('versionName') ?: '1.0') as String
+
 android {
     namespace = "com.savepoint"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -8,8 +26,8 @@ android {
         applicationId "com.savepoint"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,8 +35,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile rootProject.file(releaseStoreFile)
+                storePassword signingValue('storePassword', 'SAVEPOINT_KEYSTORE_PASSWORD')
+                keyAlias signingValue('keyAlias', 'SAVEPOINT_KEY_ALIAS')
+                keyPassword signingValue('keyPassword', 'SAVEPOINT_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

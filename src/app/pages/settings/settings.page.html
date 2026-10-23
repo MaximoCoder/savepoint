@@ -73,6 +73,26 @@
               </div>
             </div>
 
+            <label class="flex cursor-pointer items-center gap-4 px-4 py-4">
+              <div class="grid size-10 shrink-0 place-items-center rounded-full bg-base-300 text-base-content/70">
+                <ion-icon name="clipboard-outline"></ion-icon>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium">Copia protegida</p>
+                <p class="text-xs text-base-content/60">
+                  El teclado y el historial del portapapeles solo ven ••••••••. Pega manteniendo presionado el campo y
+                  tocando Pegar. Si alguna app no logra pegar, desactívalo.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary"
+                [checked]="protectedCopy()"
+                (click)="$event.preventDefault(); toggleProtectedCopy()"
+                aria-label="Copia protegida"
+              />
+            </label>
+
             <button type="button" class="flex w-full items-center gap-4 px-4 py-4 text-left" (click)="openChangePassword()">
               <div class="grid size-10 shrink-0 place-items-center rounded-full bg-base-300 text-base-content/70">
                 <ion-icon name="key-outline"></ion-icon>

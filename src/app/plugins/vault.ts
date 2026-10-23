@@ -38,7 +38,10 @@ export interface VaultPlugin {
   save(options: { entry: VaultEntryInput }): Promise<{ id: string }>;
   delete(options: { id: string }): Promise<void>;
   /** Copia desde el lado nativo, marcado como sensible y con borrado automático. */
-  copyField(options: { id: string; field: 'username' | 'password' }): Promise<{ clearsInSeconds: number }>;
+  copyField(options: { id: string; field: 'username' | 'password' }): Promise<{ clearsInSeconds: number; protected: boolean }>;
+  /** Copia protegida: el teclado y el historial del portapapeles solo ven "••••••••". */
+  getClipboardSettings(): Promise<{ protectedCopy: boolean }>;
+  setProtectedCopy(options: { enabled: boolean }): Promise<void>;
 
   /** available: el teléfono tiene huella "fuerte" registrada. enabled: savePoint ya la usa. */
   biometricStatus(): Promise<{ available: boolean; enabled: boolean }>;

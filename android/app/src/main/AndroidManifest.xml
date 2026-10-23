@@ -55,6 +55,20 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- Cuenta regresiva del portapapeles; mantiene vivo el proceso para borrar a tiempo -->
+        <service
+            android:name=".vault.ClipboardGuardService"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
+
+        <!-- Copia protegida: entrega la contraseña a la app donde pegas y "••••••••" al teclado.
+             Es exportado porque cualquier app debe poder pegar; el enlace lleva un token aleatorio
+             que solo vale 30 s y solo existe en memoria. -->
+        <provider
+            android:name=".vault.ProtectedClipProvider"
+            android:authorities="${applicationId}.clip"
+            android:exported="true" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -66,7 +80,16 @@
         </provider>
     </application>
 
+    <!-- Ver todos los teclados instalados, para entregarles "••••••••" en lugar de la contraseña -->
+    <queries>
+        <intent>
+            <action android:name="android.view.InputMethod" />
+        </intent>
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

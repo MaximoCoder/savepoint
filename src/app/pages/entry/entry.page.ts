@@ -189,9 +189,14 @@ export class EntryPage {
     const id = this.id();
     if (!id) return;
     try {
-      const { clearsInSeconds } = await Vault.copyField({ id, field });
-      const label = field === 'password' ? 'Contraseña copiada' : 'Usuario copiado';
-      this.toast.show(`${label}. Se borrará en ${clearsInSeconds} s.`, 'success');
+      const { clearsInSeconds, protected: isProtected } = await Vault.copyField({ id, field });
+      if (field === 'password' && isProtected) {
+        // La sugerencia del teclado solo pegaría "••••••••"; hay que usar el menú Pegar del campo
+        this.toast.show(`Contraseña copiada. Pégala manteniendo presionado el campo y tocando Pegar. Se borra en ${clearsInSeconds} s.`, 'success', 4500);
+      } else {
+        const label = field === 'password' ? 'Contraseña copiada' : 'Usuario copiado';
+        this.toast.show(`${label}. Se borrará en ${clearsInSeconds} s.`, 'success');
+      }
     } catch (e) {
       await this.session.handleError(e, 'No se pudo copiar.');
     }

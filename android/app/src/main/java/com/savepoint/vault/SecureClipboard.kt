@@ -15,16 +15,17 @@ import android.os.PersistableBundle
 
 /**
  * Copia endurecida al portapapeles.
- *  - Marca el contenido como sensible: Android 13+ oculta la vista previa y los teclados
- *    que respetan la marca no lo guardan en su historial.
- *  - Lo borra a los [CLEAR_AFTER_SECONDS] segundos.
  *
- * Por qué hay tres mecanismos de borrado:
- *  1. Handler: funciona mientras savePoint siga en pantalla.
- *  2. JobScheduler: cuando pasas a otra app, Android congela el proceso de savePoint a los
- *     pocos segundos y un Handler ya no se ejecuta. El sistema sí despierta la app para un job.
- *  3. Al volver a abrir savePoint, si el plazo ya venció y nada lo borró, se borra ahí.
- * El vencimiento se guarda en preferencias para sobrevivir si el sistema mata el proceso.
+ * Contraseñas con "copia protegida" (por defecto): el portapapeles solo guarda un enlace a
+ * [ProtectedClipProvider]. La app donde pegas recibe la contraseña; el teclado y el historial
+ * del portapapeles reciben "••••••••". A los [CLEAR_AFTER_SECONDS] el enlace deja de funcionar
+ * aunque el portapapeles no se haya podido limpiar.
+ *
+ * Borrado del portapapeles, en orden de fiabilidad:
+ *  1. [ClipboardGuardService]: servicio corto en primer plano; Samsung no puede congelarlo.
+ *  2. Handler: mientras el proceso siga despierto.
+ *  3. JobScheduler: si el sistema mató el proceso.
+ *  4. Al volver a abrir savePoint.
  */
 object SecureClipboard {
     const val CLEAR_AFTER_SECONDS = 30
@@ -32,60 +33,81 @@ object SecureClipboard {
     private const val JOB_ID = 7001
     private const val PREFS = "savepoint_clipboard"
     private const val KEY_EXPIRES_AT = "expiresAt"
+    private const val KEY_PROTECTED = "protectedCopy"
 
     // Mismo valor que ClipDescription.EXTRA_IS_SENSITIVE (API 33); en versiones previas se ignora.
     private const val EXTRA_IS_SENSITIVE = "android.content.extra.IS_SENSITIVE"
 
     private val handler = Handler(Looper.getMainLooper())
 
-    fun copy(ctx: Context, text: String, sensitive: Boolean) {
-        val app = ctx.applicationContext
-        handler.post {
-            val cm = app.getSystemService(ClipboardManager::class.java) ?: return@post
-            val clip = ClipData.newPlainText("savePoint", text)
-            if (sensitive) {
-                clip.description.extras = PersistableBundle().apply {
-                    putBoolean(EXTRA_IS_SENSITIVE, true)
-                }
-            }
-            cm.setPrimaryClip(clip)
+    fun isProtectedCopy(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_PROTECTED, true)
 
-            val delayMs = CLEAR_AFTER_SECONDS * 1000L
-            prefs(app).edit().putLong(KEY_EXPIRES_AT, System.currentTimeMillis() + delayMs).apply()
-
-            handler.removeCallbacksAndMessages(null)
-            handler.postDelayed({ clearIfExpired(app) }, delayMs)
-            scheduleJob(app, delayMs)
-        }
+    fun setProtectedCopy(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_PROTECTED, enabled).apply()
     }
 
-    /** Borra si ya venció el plazo. Se llama desde el Handler, el job y al volver a la app. */
+    /** @return true si la copia quedó protegida (enlace custodiado). */
+    fun copy(ctx: Context, text: String, sensitive: Boolean): Boolean {
+        val app = ctx.applicationContext
+        val delayMs = CLEAR_AFTER_SECONDS * 1000L
+        val expiresAt = System.currentTimeMillis() + delayMs
+        val useProtected = sensitive && isProtectedCopy(app)
+
+        val clip = if (useProtected) {
+            val uri = ProtectedClip.put(app, text, delayMs)
+            ClipData.newUri(app.contentResolver, "savePoint", uri)
+        } else {
+            ProtectedClip.wipe()
+            ClipData.newPlainText("savePoint", text)
+        }
+        if (sensitive) {
+            clip.description.extras = PersistableBundle().apply { putBoolean(EXTRA_IS_SENSITIVE, true) }
+        }
+
+        prefs(app).edit().putLong(KEY_EXPIRES_AT, expiresAt).apply()
+        // Primero se cancela el borrado de una copia anterior; luego se escribe la nueva
+        handler.removeCallbacksAndMessages(null)
+        handler.post {
+            val cm = app.getSystemService(ClipboardManager::class.java) ?: return@post
+            cm.setPrimaryClip(clip)
+        }
+        handler.postDelayed({ clearIfExpired(app) }, delayMs)
+        scheduleJob(app, delayMs)
+        ClipboardGuardService.start(app, expiresAt)
+        return useProtected
+    }
+
+    /** Borra si ya venció el plazo. Se llama desde el servicio, el Handler, el job y al volver a la app. */
     fun clearIfExpired(ctx: Context) {
         val app = ctx.applicationContext
         val expiresAt = prefs(app).getLong(KEY_EXPIRES_AT, 0L)
         if (expiresAt == 0L) return
-        // Tolerancia de 1 s por si el job corre un instante antes del milisegundo exacto
+        // Tolerancia de 1 s por si algo corre un instante antes del milisegundo exacto
         if (System.currentTimeMillis() + 1000 < expiresAt) return
         clearNow(app)
     }
 
-    private fun clearNow(app: Context) {
+    /** Borra ya, sin esperar el plazo ("Borrar ahora" en la notificación). */
+    fun clearNow(ctx: Context) {
+        val app = ctx.applicationContext
+        ProtectedClip.wipe()
         prefs(app).edit().remove(KEY_EXPIRES_AT).apply()
         handler.removeCallbacksAndMessages(null)
         app.getSystemService(JobScheduler::class.java)?.cancel(JOB_ID)
 
-        val cm = app.getSystemService(ClipboardManager::class.java) ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                cm.clearPrimaryClip()
-            } else {
-                cm.setPrimaryClip(ClipData.newPlainText("", ""))
+        val cm = app.getSystemService(ClipboardManager::class.java)
+        if (cm != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    cm.clearPrimaryClip()
+                } else {
+                    cm.setPrimaryClip(ClipData.newPlainText("", ""))
+                }
+            } catch (e: Exception) {
+                // Aunque falle, el enlace protegido ya no entrega nada
             }
-        } catch (e: Exception) {
-            // Algunas capas de fabricante restringen el portapapeles en segundo plano;
-            // en ese caso se reintenta al volver a la app.
-            prefs(app).edit().putLong(KEY_EXPIRES_AT, 1L).apply()
         }
+        ClipboardGuardService.stop(app)
     }
 
     @Suppress("DEPRECATION")
@@ -102,7 +124,7 @@ object SecureClipboard {
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
 
-/** Job que el sistema ejecuta aunque savePoint esté congelado en segundo plano. */
+/** Job de respaldo por si el sistema mató el proceso antes del plazo. */
 class ClipboardClearJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         SecureClipboard.clearIfExpired(applicationContext)

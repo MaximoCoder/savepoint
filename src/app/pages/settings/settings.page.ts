@@ -7,6 +7,7 @@ import { addIcons } from 'ionicons';
 import {
   arrowBack,
   chevronForward,
+  clipboardOutline,
   cloudDownloadOutline,
   cloudUploadOutline,
   fingerPrint,
@@ -40,6 +41,7 @@ export class SettingsPage {
   readonly bioBusy = signal(false);
   readonly autofillSupported = signal(true);
   readonly autofillEnabled = signal(false);
+  readonly protectedCopy = signal(true);
 
   // Bloqueo automático
   readonly autoLockOptions = [
@@ -84,6 +86,7 @@ export class SettingsPage {
     addIcons({
       arrowBack,
       chevronForward,
+  clipboardOutline,
       cloudDownloadOutline,
       cloudUploadOutline,
       fingerPrint,
@@ -109,12 +112,14 @@ export class SettingsPage {
 
   private async refresh(): Promise<void> {
     try {
-      const [bio, fill, backup, lock] = await Promise.all([
+      const [bio, fill, backup, lock, clip] = await Promise.all([
         Vault.biometricStatus(),
         Vault.autofillStatus(),
         Vault.backupStatus(),
         Vault.getLockSettings(),
+        Vault.getClipboardSettings(),
       ]);
+      this.protectedCopy.set(clip.protectedCopy);
       this.lastBackupAt.set(backup.lastBackupAt);
       this.autoLockMinutes.set(lock.autoLockMinutes);
       this.bioAvailable.set(bio.available);
@@ -164,6 +169,17 @@ export class SettingsPage {
       await Vault.openAutofillSettings();
     } catch {
       this.toast.show('No se pudieron abrir los ajustes del sistema', 'error');
+    }
+  }
+
+  async toggleProtectedCopy(): Promise<void> {
+    const next = !this.protectedCopy();
+    this.protectedCopy.set(next);
+    try {
+      await Vault.setProtectedCopy({ enabled: next });
+    } catch {
+      this.protectedCopy.set(!next);
+      this.toast.show('No se pudo cambiar la copia protegida', 'error');
     }
   }
 

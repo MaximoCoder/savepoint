@@ -3,11 +3,14 @@ package com.savepoint.vault
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.view.autofill.AutofillManager
 import androidx.activity.result.ActivityResult
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -147,8 +150,43 @@ class VaultPlugin : Plugin() {
             "password" -> e.password
             else -> return@guard call.reject("Campo no válido", "INVALID")
         }
-        SecureClipboard.copy(context, value, sensitive = field == "password")
-        call.resolve(JSObject().put("clearsInSeconds", SecureClipboard.CLEAR_AFTER_SECONDS))
+        val sensitive = field == "password"
+        val protectedCopy = SecureClipboard.copy(context, value, sensitive)
+        if (sensitive) askNotificationPermissionOnce()
+        call.resolve(JSObject().apply {
+            put("clearsInSeconds", SecureClipboard.CLEAR_AFTER_SECONDS)
+            put("protected", protectedCopy)
+        })
+    }
+
+    @PluginMethod
+    fun getClipboardSettings(call: PluginCall) = guard(call) {
+        call.resolve(JSObject().put("protectedCopy", SecureClipboard.isProtectedCopy(context)))
+    }
+
+    @PluginMethod
+    fun setProtectedCopy(call: PluginCall) = guard(call) {
+        val enabled = call.getBoolean("enabled") ?: return@guard call.reject("Falta el valor", "INVALID")
+        SecureClipboard.setProtectedCopy(context, enabled)
+        call.resolve()
+    }
+
+    /**
+     * Android 13+: la notificación con la cuenta regresiva necesita permiso. Se pide una sola vez,
+     * la primera vez que copias una contraseña. Si lo niegas, el borrado funciona igual, solo sin aviso.
+     */
+    private fun askNotificationPermissionOnce() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val permission = android.Manifest.permission.POST_NOTIFICATIONS
+        if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = context.getSharedPreferences("savepoint_clipboard", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("askedNotifications", false)) return
+        prefs.edit().putBoolean("askedNotifications", true).apply()
+        val act = activity ?: return
+        act.runOnUiThread {
+            VaultStore.externalActivityExpected = true
+            ActivityCompat.requestPermissions(act, arrayOf(permission), 7003)
+        }
     }
 
     @PluginMethod
